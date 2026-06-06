@@ -1,0 +1,31 @@
+# Android Studio / Gradle / Local paths
+.gradle/
+build/
+local.properties
+.cxx/
+*.apk
+*.aar
+*.jar
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+.navigation/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# VS Code / System / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Project specifics
+app-debug.apk
+app-release.apk
+task.md
+walkthrough.md

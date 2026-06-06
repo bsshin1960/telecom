@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#121212">
+
+    <!-- Top IP & Connection panel -->
+    <LinearLayout
+        android:id="@+id/connectionPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:gravity="center_vertical"
+        android:background="#1E1E1E"
+        android:elevation="4dp">
+
+        <EditText
+            android:id="@+id/edtIpAddress"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Host IP 입력 (예: 192.168.0.10)"
+            android:textColorHint="#666666"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#03DAC6"
+            android:inputType="text"
+            android:textSize="16sp"
+            android:padding="8dp"/>
+
+        <Button
+            android:id="@+id/btnConnect"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="연결"
+            android:backgroundTint="#03DAC6"
+            android:textColor="#121212"
+            android:layout_marginStart="8dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"/>
+    </LinearLayout>
+
+    <!-- Custom Display View for Host Screen -->
+    <com.sbs.telecom.remote.RemoteDisplayView
+        android:id="@+id/remoteDisplayView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/connectionPanel"
+        android:layout_centerInParent="true"
+        android:background="#000000" />
+
+</RelativeLayout>

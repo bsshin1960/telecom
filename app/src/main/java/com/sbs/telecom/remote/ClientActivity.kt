@@ -1,0 +1,168 @@
+package com.sbs.telecom.remote
+
+import android.graphics.BitmapFactory
+import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import com.sbs.telecom.remote.databinding.ActivityClientBinding
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.client.plugins.websocket.ws
+import io.ktor.websocket.Frame
+import io.ktor.websocket.WebSocketSession
+import io.ktor.websocket.readBytes
+import io.ktor.websocket.send
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
+
+class ClientActivity : AppCompatActivity() {
+
+    companion object {
+        private const val TAG = "ClientActivity"
+    }
+
+    private lateinit var binding: ActivityClientBinding
+    private val activityScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val client = HttpClient(OkHttp) {
+        install(WebSockets) {
+            pingInterval = 15_000 // 15초 핑 간격
+        }
+        engine {
+            config {
+                connectTimeout(5, TimeUnit.SECONDS)
+                readTimeout(10, TimeUnit.SECONDS)
+                writeTimeout(10, TimeUnit.SECONDS)
+            }
+        }
+    }
+
+    private var webSocketSession: WebSocketSession? = null
+    private var connectionJob: Job? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityClientBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        binding.btnConnect.setOnClickListener {
+            if (connectionJob?.isActive == true) {
+                disconnect()
+            } else {
+                val ip = binding.edtIpAddress.text.toString().trim()
+                if (ip.isEmpty()) {
+                    Toast.makeText(this, "IP 주소를 입력해 주세요.", Toast.LENGTH_SHORT).show()
+                } else {
+                    connectToHost(ip)
+                }
+            }
+        }
+
+        binding.remoteDisplayView.touchEventListener = { action, xRatio, yRatio ->
+            val session = webSocketSession
+            if (session != null) {
+                activityScope.launch(Dispatchers.IO) {
+                    try {
+                        session.send(Frame.Text("action=$action,x=$xRatio,y=$yRatio"))
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Touch send error: ${e.message}")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun connectToHost(ip: String) {
+        binding.btnConnect.text = "연결 중..."
+        binding.btnConnect.isEnabled = false
+
+        // 핵심 수정: WebSocket 연결을 IO 디스패처에서 수행
+        // Main 디스패처에서 실행하면 네트워크 작업으로 ANR 발생
+        connectionJob = activityScope.launch(Dispatchers.IO) {
+            try {
+                Log.d(TAG, "Connecting to ws://$ip:8080/control")
+                client.ws(host = ip, port = 8080, path = "/control") {
+                    webSocketSession = this
+                    Log.d(TAG, "WebSocket connected successfully")
+
+                    withContext(Dispatchers.Main) {
+                        binding.btnConnect.text = "연결 끊기"
+                        binding.btnConnect.isEnabled = true
+                        Toast.makeText(this@ClientActivity, "서버에 연결되었습니다.", Toast.LENGTH_SHORT).show()
+                    }
+
+                    for (frame in incoming) {
+                        if (!isActive) break
+
+                        when (frame) {
+                            is Frame.Binary -> {
+                                val bytes = frame.readBytes()
+                                if (bytes.isNotEmpty()) {
+                                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                    if (bitmap != null) {
+                                        withContext(Dispatchers.Main) {
+                                            binding.remoteDisplayView.updateFrame(bitmap)
+                                        }
+                                    } else {
+                                        Log.w(TAG, "Failed to decode frame (${bytes.size} bytes)")
+                                    }
+                                }
+                            }
+                            is Frame.Text -> {
+                                // 서버에서 텍스트 메시지가 올 경우 (향후 확장용)
+                                Log.d(TAG, "Received text frame")
+                            }
+                            else -> { /* ping/pong 등은 라이브러리가 자동 처리 */ }
+                        }
+                    }
+                    Log.d(TAG, "WebSocket incoming channel closed")
+                }
+            } catch (e: CancellationException) {
+                Log.d(TAG, "Connection cancelled")
+            } catch (e: Exception) {
+                Log.e(TAG, "Connection error: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@ClientActivity, "연결 실패: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                webSocketSession = null
+                try {
+                    withContext(Dispatchers.Main) {
+                        resetConnectionState()
+                    }
+                } catch (_: CancellationException) {
+                    // 이미 취소된 스코프에서 Main 전환 실패 시 무시
+                }
+            }
+        }
+    }
+
+    private fun disconnect() {
+        connectionJob?.cancel()
+        connectionJob = null
+        webSocketSession = null
+        resetConnectionState()
+        Toast.makeText(this, "연결이 해제되었습니다.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun resetConnectionState() {
+        binding.btnConnect.text = "연결"
+        binding.btnConnect.isEnabled = true
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        connectionJob?.cancel()
+        activityScope.cancel()
+        client.close()
+    }
+}

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="24dp"
+    android:background="#121212">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Telecom"
+        android:textColor="#FFFFFF"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="안드로이드 간 초고속 원격 화면 도움"
+        android:textColor="#888888"
+        android:textSize="14sp"
+        android:layout_marginBottom="48dp"/>
+
+    <Button
+        android:id="@+id/btnHostMode"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="도움 받기 (Host)"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFF"
+        android:backgroundTint="#6200EE"
+        android:layout_marginBottom="16dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"/>
+
+    <Button
+        android:id="@+id/btnClientMode"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="제어 하기 (Client)"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="#121212"
+        android:backgroundTint="#03DAC6"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"/>
+
+</LinearLayout>

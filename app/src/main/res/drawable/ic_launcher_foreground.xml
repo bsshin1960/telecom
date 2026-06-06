@@ -1,0 +1,40 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Stylized connection waves at the top -->
+    <path
+        android:pathData="M38,36 C46,28 62,28 70,36"
+        android:strokeColor="#A88BFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+    <path
+        android:pathData="M44,42 C49,37 59,37 64,42"
+        android:strokeColor="#7C4DFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+        
+    <!-- Smartphone frame in the center -->
+    <path
+        android:pathData="M38,46 h32 a6,6 0,0,1 6,6 v32 a6,6 0,0,1 -6,6 h-32 a6,6 0,0,1 -6,-6 v-32 a6,6 0,0,1 6,-6 z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.5"
+        android:fillColor="#1F1A3A"/>
+        
+    <!-- Home button bar -->
+    <path
+        android:pathData="M50,85 h8"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"/>
+        
+    <!-- Remote mouse cursor inside the phone -->
+    <path
+        android:pathData="M54,60 L62,68 L58,69 L62,75 L60,76 L56,70 L52,73 Z"
+        android:fillColor="#00E676"/>
+        
+</vector>
