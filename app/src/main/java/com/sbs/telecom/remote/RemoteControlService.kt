@@ -95,6 +95,9 @@ class RemoteControlService : Service() {
     // 프레임 처리 중 동시 접근 방지
     private val isProcessingFrame = AtomicBoolean(false)
 
+    private var displayListener: DisplayManager.DisplayListener? = null
+    private var lastRotation = -1
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "onCreate: Service starting")
@@ -205,6 +208,38 @@ class RemoteControlService : Service() {
         // 주기적 프레임 캡처 시작 — 화면 전환 시 onImageAvailable이 호출되지 않을 수 있으므로
         startPeriodicCapture()
 
+        // 화면 회전 감지를 위한 DisplayListener 등록
+        val displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        lastRotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            this.display?.rotation ?: -1
+        } else {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.rotation
+        }
+
+        displayListener = object : DisplayManager.DisplayListener {
+            override fun onDisplayAdded(displayId: Int) {}
+            override fun onDisplayRemoved(displayId: Int) {}
+            override fun onDisplayChanged(displayId: Int) {
+                if (displayId == android.view.Display.DEFAULT_DISPLAY) {
+                    val currentRotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        this@RemoteControlService.display?.rotation ?: -1
+                    } else {
+                        val windowManager = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+                        @Suppress("DEPRECATION")
+                        windowManager.defaultDisplay.rotation
+                    }
+                    if (currentRotation != lastRotation && currentRotation != -1) {
+                        Log.d(TAG, "Display rotation changed: $lastRotation -> $currentRotation. Recreating VirtualDisplay.")
+                        lastRotation = currentRotation
+                        recreateVirtualDisplay()
+                    }
+                }
+            }
+        }
+        displayManager.registerDisplayListener(displayListener, backgroundHandler)
+
         Log.d(TAG, "startScreenCapture: VirtualDisplay created successfully")
     }
 
@@ -240,16 +275,28 @@ class RemoteControlService : Service() {
                 val rowStride = planes[0].rowStride
                 val rowPadding = rowStride - pixelStride * captureWidth
 
-                val bitmap = Bitmap.createBitmap(
-                    captureWidth + rowPadding / pixelStride,
+                // rowPadding이 있으면 GPU 버퍼 정렬 때문에 실제 화면보다 넓은 비트맵이 생성됨
+                // 이 패딩 영역에는 쓰레기 값(노이즈 줄무늬)이 포함되므로 크롭 필요
+                val fullWidth = captureWidth + rowPadding / pixelStride
+                val fullBitmap = Bitmap.createBitmap(
+                    fullWidth,
                     captureHeight,
                     Bitmap.Config.ARGB_8888
                 )
-                bitmap.copyPixelsFromBuffer(buffer)
+                fullBitmap.copyPixelsFromBuffer(buffer)
 
                 // 이미지를 즉시 close — 버퍼를 빨리 반환해야 다음 프레임을 받을 수 있음
                 image.close()
                 image = null
+
+                // 패딩이 있는 경우 실제 화면 영역만 크롭, 없으면 그대로 사용
+                val bitmap = if (rowPadding > 0) {
+                    val cropped = Bitmap.createBitmap(fullBitmap, 0, 0, captureWidth, captureHeight)
+                    fullBitmap.recycle()
+                    cropped
+                } else {
+                    fullBitmap
+                }
 
                 val outStream = ByteArrayOutputStream(captureWidth * captureHeight / 4)
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 60, outStream)
@@ -356,23 +403,85 @@ class RemoteControlService : Service() {
 
     private fun parseAndInjectTouch(text: String) {
         try {
-            val params = text.split(",").associate {
-                val parts = it.split("=")
-                parts[0] to parts[1]
+            Log.d(TAG, "parseAndInjectTouch: received '$text'")
+            val params = mutableMapOf<String, String>()
+            for (token in text.split(",")) {
+                val eqIdx = token.indexOf('=')
+                if (eqIdx > 0 && eqIdx < token.length - 1) {
+                    params[token.substring(0, eqIdx)] = token.substring(eqIdx + 1)
+                }
             }
-            val action = params["action"]?.toInt()
-            val x = params["x"]?.toFloat()
-            val y = params["y"]?.toFloat()
+            val action = params["action"]?.toIntOrNull()
+            val x = params["x"]?.toFloatOrNull()
+            val y = params["y"]?.toFloatOrNull()
             if (action != null && x != null && y != null) {
                 val service = RemoteAccessibilityService.instance
                 if (service != null) {
+                    Log.d(TAG, "parseAndInjectTouch: dispatching action=$action, x=$x, y=$y")
                     service.injectTouch(action, x, y)
                 } else {
-                    Log.w(TAG, "parseAndInjectTouch: AccessibilityService instance is null — touch ignored")
+                    Log.w(TAG, "parseAndInjectTouch: AccessibilityService instance is null — touch ignored. 접근성 서비스를 활성화하세요.")
                 }
+            } else {
+                Log.w(TAG, "parseAndInjectTouch: invalid params — action=$action, x=$x, y=$y from '$text'")
             }
         } catch (e: Exception) {
             Log.e(TAG, "parseAndInjectTouch error: ${e.message}")
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        Log.d(TAG, "onConfigurationChanged: orientation=${newConfig.orientation}")
+        recreateVirtualDisplay()
+    }
+
+    private fun recreateVirtualDisplay() {
+        val mp = mediaProjection ?: return
+        Log.d(TAG, "recreateVirtualDisplay: updating resolution")
+        
+        try {
+            virtualDisplay?.release()
+            virtualDisplay = null
+            imageReader?.close()
+            imageReader = null
+            
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+            val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                this.display
+            } else {
+                @Suppress("DEPRECATION")
+                windowManager.defaultDisplay
+            }
+            val realMetrics = android.util.DisplayMetrics()
+            display?.getRealMetrics(realMetrics)
+            
+            val realWidth = realMetrics.widthPixels
+            val realHeight = realMetrics.heightPixels
+            val scale = 0.5f
+            captureWidth = (realWidth * scale).toInt()
+            captureHeight = (realHeight * scale).toInt()
+            val density = realMetrics.densityDpi
+            
+            Log.d(TAG, "recreateVirtualDisplay: new resolution=${realWidth}x${realHeight}, capture=${captureWidth}x${captureHeight}")
+            
+            imageReader = ImageReader.newInstance(captureWidth, captureHeight, PixelFormat.RGBA_8888, 4)
+            imageReader?.setOnImageAvailableListener({ reader ->
+                processImageFromReader(reader)
+            }, backgroundHandler)
+            
+            virtualDisplay = mp.createVirtualDisplay(
+                "RemoteCapture",
+                captureWidth,
+                captureHeight,
+                density,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader!!.surface,
+                null,
+                backgroundHandler
+            )
+        } catch (e: java.lang.Exception) {
+            Log.e(TAG, "Error in recreateVirtualDisplay: ${e.message}", e)
         }
     }
 
@@ -380,6 +489,13 @@ class RemoteControlService : Service() {
         super.onDestroy()
         Log.d(TAG, "onDestroy: cleaning up resources")
         isRunning = false
+
+        // DisplayListener 해제
+        displayListener?.let {
+            val displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+            displayManager.unregisterDisplayListener(it)
+        }
+        displayListener = null
 
         // 주기적 캡처 중지
         periodicCaptureRunnable?.let { backgroundHandler?.removeCallbacks(it) }
