@@ -171,13 +171,17 @@ class RemoteControlService : Service() {
             }
         }, null)
 
-        val metrics = resources.displayMetrics
-        val realWidth = metrics.widthPixels
-        val realHeight = metrics.heightPixels
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+        @Suppress("DEPRECATION")
+        val display = windowManager.defaultDisplay
+        val realMetrics = android.util.DisplayMetrics()
+        display.getRealMetrics(realMetrics)
+        val realWidth = realMetrics.widthPixels
+        val realHeight = realMetrics.heightPixels
         val scale = 0.5f
         captureWidth = (realWidth * scale).toInt()
         captureHeight = (realHeight * scale).toInt()
-        val density = metrics.densityDpi
+        val density = realMetrics.densityDpi
 
         Log.d(TAG, "startScreenCapture: resolution=${realWidth}x${realHeight}, capture=${captureWidth}x${captureHeight}")
 
@@ -447,14 +451,10 @@ class RemoteControlService : Service() {
             imageReader = null
             
             val windowManager = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
-            val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                this.display
-            } else {
-                @Suppress("DEPRECATION")
-                windowManager.defaultDisplay
-            }
+            @Suppress("DEPRECATION")
+            val display = windowManager.defaultDisplay
             val realMetrics = android.util.DisplayMetrics()
-            display?.getRealMetrics(realMetrics)
+            display.getRealMetrics(realMetrics)
             
             val realWidth = realMetrics.widthPixels
             val realHeight = realMetrics.heightPixels
