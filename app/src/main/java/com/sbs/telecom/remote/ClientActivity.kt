@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -50,6 +51,10 @@ class ClientActivity : AppCompatActivity() {
     private var connectionJob: Job? = null
     private var isFullScreenMode = false
 
+    // 터치 이벤트 직렬 전송을 위한 채널 — 순서 보장
+    private val touchChannel = Channel<String>(capacity = Channel.UNLIMITED)
+    private var touchSenderJob: Job? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityClientBinding.inflate(layoutInflater)
@@ -71,13 +76,8 @@ class ClientActivity : AppCompatActivity() {
         binding.remoteDisplayView.touchEventListener = { action, xRatio, yRatio ->
             val session = webSocketSession
             if (session != null) {
-                activityScope.launch(Dispatchers.IO) {
-                    try {
-                        session.send(Frame.Text("action=$action,x=$xRatio,y=$yRatio"))
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Touch send error: ${e.message}")
-                    }
-                }
+                // Channel에 넣으면 별도 코루틴이 순서대로 전송합니다.
+                touchChannel.trySend("action=$action,x=$xRatio,y=$yRatio")
             }
         }
 
@@ -121,6 +121,22 @@ class ClientActivity : AppCompatActivity() {
                     webSocketSession = this
                     Log.d(TAG, "WebSocket connected successfully")
 
+                    // 터치 이벤트 직렬 전송 코루틴 시작 — Channel에서 순서대로 하나씩 꺼내 전송
+                    touchSenderJob = activityScope.launch(Dispatchers.IO) {
+                        for (message in touchChannel) {
+                            try {
+                                val session = webSocketSession
+                                if (session != null) {
+                                    session.send(Frame.Text(message))
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Touch send error: ${e.message}")
+                            }
+                        }
+                    }
+
                     withContext(Dispatchers.Main) {
                         binding.btnConnect.text = "연결 끊기"
                         binding.btnConnect.isEnabled = true
@@ -162,6 +178,8 @@ class ClientActivity : AppCompatActivity() {
                 }
             } finally {
                 webSocketSession = null
+                touchSenderJob?.cancel()
+                touchSenderJob = null
                 try {
                     withContext(Dispatchers.Main) {
                         resetConnectionState()
@@ -194,7 +212,9 @@ class ClientActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        touchSenderJob?.cancel()
         connectionJob?.cancel()
+        touchChannel.close()
         activityScope.cancel()
         client.close()
     }
