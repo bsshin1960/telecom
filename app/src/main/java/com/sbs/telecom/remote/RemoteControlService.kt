@@ -8,10 +8,15 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioPlaybackCaptureConfiguration
+import android.media.AudioRecord
 import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
@@ -62,6 +67,10 @@ class RemoteControlService : Service() {
         // 화면 변화가 없을 때에도 주기적으로 프레임을 캡처하는 간격 (ms)
         private const val PERIODIC_CAPTURE_INTERVAL_MS = 300L
 
+        private const val AUDIO_SAMPLE_RATE = 16000
+        private const val AUDIO_CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
+        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+
         @Volatile
         var isRunning = false
             private set
@@ -73,6 +82,9 @@ class RemoteControlService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
+
+    private var audioRecord: AudioRecord? = null
+    private var audioRecordJob: Job? = null
 
     private var backgroundThread: HandlerThread? = null
     private var backgroundHandler: Handler? = null
@@ -244,6 +256,9 @@ class RemoteControlService : Service() {
         }
         displayManager.registerDisplayListener(displayListener, backgroundHandler)
 
+        // 시스템 소리(오디오) 캡처 시작
+        startAudioCapture()
+
         Log.d(TAG, "startScreenCapture: VirtualDisplay created successfully")
     }
 
@@ -307,9 +322,7 @@ class RemoteControlService : Service() {
                 val jpegBytes = outStream.toByteArray()
                 bitmap.recycle()
 
-                latestFrame = jpegBytes
-                lastFrameTime.set(System.currentTimeMillis())
-                broadcastFrame(jpegBytes)
+                broadcastVideo(jpegBytes)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Image capture error: ${e.message}")
@@ -318,6 +331,82 @@ class RemoteControlService : Service() {
             try { image?.close() } catch (_: Exception) {}
             isProcessingFrame.set(false)
         }
+    }
+
+    private fun broadcastVideo(jpegBytes: ByteArray) {
+        val packet = ByteArray(1 + jpegBytes.size)
+        packet[0] = 0 // 0: 비디오 프레임
+        System.arraycopy(jpegBytes, 0, packet, 1, jpegBytes.size)
+
+        latestFrame = packet
+        lastFrameTime.set(System.currentTimeMillis())
+        broadcastFrame(packet)
+    }
+
+    private fun startAudioCapture() {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "RECORD_AUDIO permission not granted — audio capture skipped")
+            return
+        }
+
+        try {
+            val audioFormat = AudioFormat.Builder()
+                .setEncoding(AUDIO_FORMAT)
+                .setSampleRate(AUDIO_SAMPLE_RATE)
+                .setChannelMask(AUDIO_CHANNEL_CONFIG)
+                .build()
+
+            val minBufferSize = AudioRecord.getMinBufferSize(AUDIO_SAMPLE_RATE, AUDIO_CHANNEL_CONFIG, AUDIO_FORMAT)
+            val bufferSize = if (minBufferSize > 0) minBufferSize * 2 else 2048
+
+            val builder = AudioRecord.Builder()
+                .setAudioFormat(audioFormat)
+                .setBufferSizeInBytes(bufferSize)
+
+            val projection = mediaProjection
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && projection != null) {
+                try {
+                    val config = AudioPlaybackCaptureConfiguration.Builder(projection)
+                        .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                        .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                        .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+                        .build()
+                    builder.setAudioPlaybackCaptureConfig(config)
+                    Log.d(TAG, "Using AudioPlaybackCaptureConfiguration (System Audio)")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to set AudioPlaybackCaptureConfig, falling back to MIC: ${e.message}")
+                    builder.setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+                }
+            } else {
+                builder.setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+                Log.d(TAG, "Using MediaRecorder.AudioSource.MIC for audio capture")
+            }
+
+            audioRecord = builder.build()
+
+            audioRecord?.startRecording()
+            Log.d(TAG, "Audio recording started successfully")
+
+            audioRecordJob = serviceScope.launch(Dispatchers.IO) {
+                val buffer = ByteArray(bufferSize)
+                while (isActive && audioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                    val readBytes = audioRecord?.read(buffer, 0, buffer.size) ?: -1
+                    if (readBytes > 0) {
+                        val audioData = buffer.copyOf(readBytes)
+                        broadcastAudio(audioData)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start audio recording: ${e.message}", e)
+        }
+    }
+
+    private fun broadcastAudio(audioBytes: ByteArray) {
+        val packet = ByteArray(1 + audioBytes.size)
+        packet[0] = 1 // 1: 오디오 프레임
+        System.arraycopy(audioBytes, 0, packet, 1, audioBytes.size)
+        broadcastFrame(packet)
     }
 
     /**
@@ -500,6 +589,17 @@ class RemoteControlService : Service() {
         // 주기적 캡처 중지
         periodicCaptureRunnable?.let { backgroundHandler?.removeCallbacks(it) }
         periodicCaptureRunnable = null
+
+        // 오디오 레코더 정리
+        try {
+            audioRecordJob?.cancel()
+            audioRecordJob = null
+            audioRecord?.stop()
+            audioRecord?.release()
+            audioRecord = null
+        } catch (e: Exception) {
+            Log.e(TAG, "AudioRecord cleanup error: ${e.message}")
+        }
 
         try { server?.stop(1000, 2000) } catch (e: Exception) { Log.e(TAG, "Server stop error: ${e.message}") }
         try { virtualDisplay?.release() } catch (e: Exception) {}

@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!--
         WRITE_SECURE_SETTINGS: 앱이 자체적으로 접근성 서비스를 활성화하기 위해 필요.
         일반 설치로는 부여되지 않으며, 아래 ADB 명령을 1회 실행해야 함:

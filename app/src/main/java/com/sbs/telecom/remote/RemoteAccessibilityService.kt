@@ -71,17 +71,19 @@ class RemoteAccessibilityService : AccessibilityService() {
     fun injectTouch(action: Int, xRatio: Float, yRatio: Float) {
         // 네비게이션 바를 포함한 실제 전체 화면 크기를 획득하여 좌표 매핑 오차를 해결합니다.
         val windowManager = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
-        val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            this.display
+        val width: Int
+        val height: Int
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            val bounds = windowManager.currentWindowMetrics.bounds
+            width = bounds.width()
+            height = bounds.height()
         } else {
+            val realMetrics = android.util.DisplayMetrics()
             @Suppress("DEPRECATION")
-            windowManager.defaultDisplay
+            windowManager.defaultDisplay.getRealMetrics(realMetrics)
+            width = realMetrics.widthPixels
+            height = realMetrics.heightPixels
         }
-        val realMetrics = android.util.DisplayMetrics()
-        display?.getRealMetrics(realMetrics)
-        
-        val width = realMetrics.widthPixels
-        val height = realMetrics.heightPixels
 
         val x = xRatio * width
         val y = yRatio * height
@@ -295,7 +297,7 @@ class RemoteAccessibilityService : AccessibilityService() {
         }
 
         try {
-            dispatchGesture(nextGesture, object : GestureResultCallback() {
+            val success = dispatchGesture(nextGesture, object : GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
                     Log.d(TAG, "Gesture dispatched successfully")
                     isDispatching.set(false)
@@ -317,6 +319,7 @@ class RemoteAccessibilityService : AccessibilityService() {
                     }
                 }
             }, mainHandler)
+            Log.d(TAG, "dispatchGesture raw result: $success")
         } catch (e: Exception) {
             Log.e(TAG, "dispatchGesture error: ${e.message}", e)
             isDispatching.set(false)

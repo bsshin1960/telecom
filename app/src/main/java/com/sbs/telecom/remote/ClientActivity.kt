@@ -1,6 +1,9 @@
 package com.sbs.telecom.remote
 
 import android.graphics.BitmapFactory
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -54,6 +57,8 @@ class ClientActivity : AppCompatActivity() {
     // 터치 이벤트 직렬 전송을 위한 채널 — 순서 보장
     private val touchChannel = Channel<String>(capacity = Channel.UNLIMITED)
     private var touchSenderJob: Job? = null
+    
+    private var audioTrack: AudioTrack? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -143,20 +148,28 @@ class ClientActivity : AppCompatActivity() {
                         Toast.makeText(this@ClientActivity, "서버에 연결되었습니다.", Toast.LENGTH_SHORT).show()
                     }
 
+                    // 오디오 수신 재생 준비
+                    initAudioTrack()
+
                     for (frame in incoming) {
                         if (!isActive) break
 
                         when (frame) {
                             is Frame.Binary -> {
                                 val bytes = frame.readBytes()
-                                if (bytes.isNotEmpty()) {
-                                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                                    if (bitmap != null) {
-                                        withContext(Dispatchers.Main) {
-                                            binding.remoteDisplayView.updateFrame(bitmap)
+                                if (bytes.size > 1) {
+                                    val type = bytes[0].toInt()
+                                    if (type == 0) { // 비디오
+                                        val bitmap = BitmapFactory.decodeByteArray(bytes, 1, bytes.size - 1)
+                                        if (bitmap != null) {
+                                            withContext(Dispatchers.Main) {
+                                                binding.remoteDisplayView.updateFrame(bitmap)
+                                            }
+                                        } else {
+                                            Log.w(TAG, "Failed to decode video frame (${bytes.size} bytes)")
                                         }
-                                    } else {
-                                        Log.w(TAG, "Failed to decode frame (${bytes.size} bytes)")
+                                    } else if (type == 1) { // 오디오
+                                        audioTrack?.write(bytes, 1, bytes.size - 1)
                                     }
                                 }
                             }
@@ -180,6 +193,7 @@ class ClientActivity : AppCompatActivity() {
                 webSocketSession = null
                 touchSenderJob?.cancel()
                 touchSenderJob = null
+                releaseAudioTrack()
                 try {
                     withContext(Dispatchers.Main) {
                         resetConnectionState()
@@ -210,11 +224,56 @@ class ClientActivity : AppCompatActivity() {
         binding.btnConnect.isEnabled = true
     }
 
+    private fun initAudioTrack() {
+        try {
+            val sampleRate = 16000
+            val minBufferSize = AudioTrack.getMinBufferSize(
+                sampleRate,
+                AudioFormat.CHANNEL_OUT_MONO,
+                AudioFormat.ENCODING_PCM_16BIT
+            )
+            val bufferSize = if (minBufferSize > 0) minBufferSize * 2 else 4096
+            audioTrack = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build()
+                )
+                .setBufferSizeInBytes(bufferSize)
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
+            audioTrack?.play()
+            Log.d(TAG, "AudioTrack initialized and started playing")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize AudioTrack: ${e.message}")
+        }
+    }
+
+    private fun releaseAudioTrack() {
+        try {
+            audioTrack?.stop()
+            audioTrack?.release()
+            audioTrack = null
+            Log.d(TAG, "AudioTrack released")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing AudioTrack: ${e.message}")
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         touchSenderJob?.cancel()
         connectionJob?.cancel()
         touchChannel.close()
+        releaseAudioTrack()
         activityScope.cancel()
         client.close()
     }

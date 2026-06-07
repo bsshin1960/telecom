@@ -46,6 +46,17 @@ class HostActivity : AppCompatActivity() {
         }
     }
 
+    private val requestAudioPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            startRemoteControlService()
+        } else {
+            Toast.makeText(this, "오디오 녹음 권한이 거부되었습니다. 화면만 공유됩니다.", Toast.LENGTH_SHORT).show()
+            startRemoteControlService()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityHostBinding.inflate(layoutInflater)
@@ -61,7 +72,11 @@ class HostActivity : AppCompatActivity() {
             if (isServiceRunning(RemoteControlService::class.java)) {
                 stopRemoteControlService()
             } else {
-                startRemoteControlService()
+                if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    startRemoteControlService()
+                } else {
+                    requestAudioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                }
             }
         }
     }
