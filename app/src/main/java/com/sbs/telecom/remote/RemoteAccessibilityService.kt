@@ -50,8 +50,19 @@ class RemoteAccessibilityService : AccessibilityService() {
     }
 
     fun injectTouch(action: Int, xRatio: Float, yRatio: Float) {
-        val width = resources.displayMetrics.widthPixels
-        val height = resources.displayMetrics.heightPixels
+        // 네비게이션 바를 포함한 실제 전체 화면 크기를 획득하여 좌표 매핑 오차를 해결합니다.
+        val windowManager = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
+        val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            this.display
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay
+        }
+        val realMetrics = android.util.DisplayMetrics()
+        display?.getRealMetrics(realMetrics)
+        
+        val width = realMetrics.widthPixels
+        val height = realMetrics.heightPixels
 
         val x = xRatio * width
         val y = yRatio * height
@@ -111,7 +122,8 @@ class RemoteAccessibilityService : AccessibilityService() {
                 moveTo(start.x, start.y)
                 lineTo(start.x + 1f, start.y + 1f)
             }
-            val stroke = GestureDescription.StrokeDescription(path, 0, 50)
+            // 탭 누름 지속시간을 100ms로 소폭 증가시켜 시스템 네비게이션 버튼이 정확히 누르도록 조치합니다.
+            val stroke = GestureDescription.StrokeDescription(path, 0, 100)
             builder.addStroke(stroke)
             Log.d(TAG, "dispatchBufferedGesture: TAP at (${start.x}, ${start.y}), distance=$totalDistance")
         } else if (points.size == 2) {
