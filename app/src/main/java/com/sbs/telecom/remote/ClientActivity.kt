@@ -48,6 +48,7 @@ class ClientActivity : AppCompatActivity() {
 
     private var webSocketSession: WebSocketSession? = null
     private var connectionJob: Job? = null
+    private var isFullScreenMode = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,6 +79,32 @@ class ClientActivity : AppCompatActivity() {
                     }
                 }
             }
+        }
+
+        // 자동 연결 및 전체 화면(몰입 모드) 처리
+        val ip = intent.getStringExtra("EXTRA_HOST_IP")
+        if (ip != null) {
+            isFullScreenMode = true
+            binding.connectionPanel.visibility = android.view.View.GONE
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                window.insetsController?.let { controller ->
+                    controller.hide(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.navigationBars())
+                    controller.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = (
+                    android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                )
+            }
+
+            connectToHost(ip)
         }
     }
 
@@ -138,6 +165,9 @@ class ClientActivity : AppCompatActivity() {
                 try {
                     withContext(Dispatchers.Main) {
                         resetConnectionState()
+                        if (isFullScreenMode) {
+                            finish()
+                        }
                     }
                 } catch (_: CancellationException) {
                     // 이미 취소된 스코프에서 Main 전환 실패 시 무시
@@ -152,6 +182,9 @@ class ClientActivity : AppCompatActivity() {
         webSocketSession = null
         resetConnectionState()
         Toast.makeText(this, "연결이 해제되었습니다.", Toast.LENGTH_SHORT).show()
+        if (isFullScreenMode) {
+            finish()
+        }
     }
 
     private fun resetConnectionState() {

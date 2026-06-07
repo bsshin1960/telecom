@@ -3,8 +3,11 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center"
-    android:padding="24dp"
+    android:gravity="center_horizontal"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="10mm"
+    android:paddingBottom="24dp"
     android:background="#121212">
 
     <TextView
@@ -28,7 +31,7 @@
         android:id="@+id/btnHostMode"
         android:layout_width="match_parent"
         android:layout_height="60dp"
-        android:text="도움 받기 (Host)"
+        android:text="도움 받기"
         android:textSize="18sp"
         android:textStyle="bold"
         android:textColor="#FFFFFF"
@@ -41,12 +44,51 @@
         android:id="@+id/btnClientMode"
         android:layout_width="match_parent"
         android:layout_height="60dp"
-        android:text="제어 하기 (Client)"
+        android:text="도움 주기"
         android:textSize="18sp"
         android:textStyle="bold"
         android:textColor="#121212"
         android:backgroundTint="#03DAC6"
         android:insetTop="0dp"
         android:insetBottom="0dp"/>
+
+    <!-- IP Input & Connection Panel -->
+    <LinearLayout
+        android:id="@+id/layoutIpInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="24dp"
+        android:visibility="gone">
+
+        <EditText
+            android:id="@+id/edtIpAddress"
+            android:layout_width="0dp"
+            android:layout_height="55dp"
+            android:layout_weight="1"
+            android:hint="Host IP 입력 (예: 192.168.0.10)"
+            android:textColorHint="#666666"
+            android:textColor="#FFFFFF"
+            android:inputType="text"
+            android:textSize="16sp"
+            android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:background="#1E1E1E"/>
+
+        <Button
+            android:id="@+id/btnConnect"
+            android:layout_width="wrap_content"
+            android:layout_height="55dp"
+            android:text="연결"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:backgroundTint="#03DAC6"
+            android:textColor="#121212"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:layout_marginStart="8dp"/>
+    </LinearLayout>
 
 </LinearLayout>
