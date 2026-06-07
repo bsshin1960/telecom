@@ -431,21 +431,19 @@ class RemoteControlService : Service() {
                         Log.d(TAG, "New client connected: $remoteAddr")
                         activeSessions.add(this)
 
-                        // 새로 연결된 클라이언트에게 최신 프레임 즉시 전송
-                        try {
-                            latestFrame?.let { frame ->
-                                send(Frame.Binary(true, frame))
-                                Log.d(TAG, "Sent latest frame to new client")
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Failed to send initial frame: ${e.message}")
-                        }
-
                         try {
                             for (frame in incoming) {
                                 if (frame is Frame.Text) {
                                     val text = frame.readText()
-                                    parseAndInjectTouch(text)
+                                    if (text == "CLIENT_READY") {
+                                        // 클라이언트가 준비되었으므로 최신 비디오 프레임을 즉시 전송하여 화면을 띄움
+                                        latestFrame?.let { frameData ->
+                                            send(Frame.Binary(true, frameData))
+                                            Log.d(TAG, "Sent initial frame on CLIENT_READY to $remoteAddr")
+                                        }
+                                    } else {
+                                        parseAndInjectTouch(text)
+                                    }
                                 }
                             }
                         } catch (e: Exception) {

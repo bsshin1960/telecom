@@ -151,6 +151,9 @@ class ClientActivity : AppCompatActivity() {
                     // 오디오 수신 재생 준비
                     initAudioTrack()
 
+                    // 서버에 클라이언트가 준비되었음을 알리고 최초 프레임 전송 요청
+                    send(Frame.Text("CLIENT_READY"))
+
                     for (frame in incoming) {
                         if (!isActive) break
 
