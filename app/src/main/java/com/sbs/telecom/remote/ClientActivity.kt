@@ -164,6 +164,16 @@ class ClientActivity : AppCompatActivity() {
                                         if (bitmap != null) {
                                             withContext(Dispatchers.Main) {
                                                 binding.remoteDisplayView.updateFrame(bitmap)
+
+                                                // 상대방 화면 종횡비에 맞게 내 화면 방향을 자동 전환 (사용자 경험 개선)
+                                                val isBmpLandscape = bitmap.width > bitmap.height
+                                                val currentOrientation = resources.configuration.orientation
+                                                
+                                                if (isBmpLandscape && currentOrientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
+                                                    requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                                } else if (!isBmpLandscape && currentOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+                                                    requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                                                }
                                             }
                                         } else {
                                             Log.w(TAG, "Failed to decode video frame (${bytes.size} bytes)")

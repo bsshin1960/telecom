@@ -183,17 +183,11 @@ class RemoteControlService : Service() {
             }
         }, null)
 
-        val windowManager = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
-        @Suppress("DEPRECATION")
-        val display = windowManager.defaultDisplay
-        val realMetrics = android.util.DisplayMetrics()
-        display.getRealMetrics(realMetrics)
-        val realWidth = realMetrics.widthPixels
-        val realHeight = realMetrics.heightPixels
+        val (realWidth, realHeight) = getRealScreenSize()
         val scale = 0.5f
         captureWidth = (realWidth * scale).toInt()
         captureHeight = (realHeight * scale).toInt()
-        val density = realMetrics.densityDpi
+        val density = resources.displayMetrics.densityDpi
 
         Log.d(TAG, "startScreenCapture: resolution=${realWidth}x${realHeight}, capture=${captureWidth}x${captureHeight}")
 
@@ -226,26 +220,16 @@ class RemoteControlService : Service() {
 
         // 화면 회전 감지를 위한 DisplayListener 등록
         val displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        lastRotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            this.display?.rotation ?: -1
-        } else {
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
-            @Suppress("DEPRECATION")
-            windowManager.defaultDisplay.rotation
-        }
+        val defaultDisplay = displayManager.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+        lastRotation = defaultDisplay?.rotation ?: -1
 
         displayListener = object : DisplayManager.DisplayListener {
             override fun onDisplayAdded(displayId: Int) {}
             override fun onDisplayRemoved(displayId: Int) {}
             override fun onDisplayChanged(displayId: Int) {
                 if (displayId == android.view.Display.DEFAULT_DISPLAY) {
-                    val currentRotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        this@RemoteControlService.display?.rotation ?: -1
-                    } else {
-                        val windowManager = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
-                        @Suppress("DEPRECATION")
-                        windowManager.defaultDisplay.rotation
-                    }
+                    val freshDisplay = displayManager.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+                    val currentRotation = freshDisplay?.rotation ?: -1
                     if (currentRotation != lastRotation && currentRotation != -1) {
                         Log.d(TAG, "Display rotation changed: $lastRotation -> $currentRotation. Recreating VirtualDisplay.")
                         lastRotation = currentRotation
@@ -529,6 +513,33 @@ class RemoteControlService : Service() {
         recreateVirtualDisplay()
     }
 
+    private fun getRealScreenSize(): Pair<Int, Int> {
+        val displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        val display = displayManager.getDisplay(android.view.Display.DEFAULT_DISPLAY) ?: run {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+            @Suppress("DEPRECATION") windowManager.defaultDisplay
+        }
+
+        val realMetrics = android.util.DisplayMetrics()
+        display.getRealMetrics(realMetrics)
+
+        var realWidth = realMetrics.widthPixels
+        var realHeight = realMetrics.heightPixels
+
+        val rotation = display.rotation
+        val isLandscape = rotation == android.view.Surface.ROTATION_90 || rotation == android.view.Surface.ROTATION_270
+
+        if (isLandscape && realWidth < realHeight) {
+            realWidth = realMetrics.heightPixels
+            realHeight = realMetrics.widthPixels
+        } else if (!isLandscape && realWidth > realHeight) {
+            realWidth = realMetrics.heightPixels
+            realHeight = realMetrics.widthPixels
+        }
+
+        return Pair(realWidth, realHeight)
+    }
+
     private fun recreateVirtualDisplay() {
         val mp = mediaProjection ?: return
         Log.d(TAG, "recreateVirtualDisplay: updating resolution")
@@ -539,18 +550,11 @@ class RemoteControlService : Service() {
             imageReader?.close()
             imageReader = null
             
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
-            @Suppress("DEPRECATION")
-            val display = windowManager.defaultDisplay
-            val realMetrics = android.util.DisplayMetrics()
-            display.getRealMetrics(realMetrics)
-            
-            val realWidth = realMetrics.widthPixels
-            val realHeight = realMetrics.heightPixels
+            val (realWidth, realHeight) = getRealScreenSize()
             val scale = 0.5f
             captureWidth = (realWidth * scale).toInt()
             captureHeight = (realHeight * scale).toInt()
-            val density = realMetrics.densityDpi
+            val density = resources.displayMetrics.densityDpi
             
             Log.d(TAG, "recreateVirtualDisplay: new resolution=${realWidth}x${realHeight}, capture=${captureWidth}x${captureHeight}")
             

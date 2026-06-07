@@ -69,22 +69,7 @@ class RemoteAccessibilityService : AccessibilityService() {
      * 동기화를 위해 synchronized 블록을 사용합니다.
      */
     fun injectTouch(action: Int, xRatio: Float, yRatio: Float) {
-        // 네비게이션 바를 포함한 실제 전체 화면 크기를 획득하여 좌표 매핑 오차를 해결합니다.
-        val windowManager = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
-        val width: Int
-        val height: Int
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            val bounds = windowManager.currentWindowMetrics.bounds
-            width = bounds.width()
-            height = bounds.height()
-        } else {
-            val realMetrics = android.util.DisplayMetrics()
-            @Suppress("DEPRECATION")
-            windowManager.defaultDisplay.getRealMetrics(realMetrics)
-            width = realMetrics.widthPixels
-            height = realMetrics.heightPixels
-        }
-
+        val (width, height) = getRealScreenSize()
         val x = xRatio * width
         val y = yRatio * height
         val currentTime = System.currentTimeMillis()
@@ -102,7 +87,7 @@ class RemoteAccessibilityService : AccessibilityService() {
                     cancelGestureTimeout()
                     gesturePoints.clear()
                     gesturePoints.add(GesturePoint(x, y, currentTime))
-                    startGestureTimeout(xRatio, yRatio, width, height)
+                    startGestureTimeout(xRatio, yRatio)
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (gesturePoints.isNotEmpty()) {
@@ -119,7 +104,7 @@ class RemoteAccessibilityService : AccessibilityService() {
                     } else {
                         // ACTION_DOWN이 누락된 경우에도 MOVE를 시작점으로 취급
                         gesturePoints.add(GesturePoint(x, y, currentTime))
-                        startGestureTimeout(xRatio, yRatio, width, height)
+                        startGestureTimeout(xRatio, yRatio)
                     }
                 }
                 MotionEvent.ACTION_UP -> {
@@ -149,7 +134,7 @@ class RemoteAccessibilityService : AccessibilityService() {
     /**
      * ACTION_DOWN 이후 ACTION_UP이 오지 않는 경우를 대비해 타임아웃을 설정합니다.
      */
-    private fun startGestureTimeout(xRatio: Float, yRatio: Float, width: Int, height: Int) {
+    private fun startGestureTimeout(xRatio: Float, yRatio: Float) {
         cancelGestureTimeout()
         gestureTimeoutRunnable = Runnable {
             synchronized(gesturePoints) {
@@ -330,5 +315,32 @@ class RemoteAccessibilityService : AccessibilityService() {
                 }, 50)
             }
         }
+    }
+
+    private fun getRealScreenSize(): Pair<Int, Int> {
+        val displayManager = getSystemService(android.content.Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager
+        val display = displayManager.getDisplay(android.view.Display.DEFAULT_DISPLAY) ?: run {
+            val windowManager = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
+            @Suppress("DEPRECATION") windowManager.defaultDisplay
+        }
+
+        val realMetrics = android.util.DisplayMetrics()
+        display.getRealMetrics(realMetrics)
+
+        var realWidth = realMetrics.widthPixels
+        var realHeight = realMetrics.heightPixels
+
+        val rotation = display.rotation
+        val isLandscape = rotation == android.view.Surface.ROTATION_90 || rotation == android.view.Surface.ROTATION_270
+
+        if (isLandscape && realWidth < realHeight) {
+            realWidth = realMetrics.heightPixels
+            realHeight = realMetrics.widthPixels
+        } else if (!isLandscape && realWidth > realHeight) {
+            realWidth = realMetrics.heightPixels
+            realHeight = realMetrics.widthPixels
+        }
+
+        return Pair(realWidth, realHeight)
     }
 }
