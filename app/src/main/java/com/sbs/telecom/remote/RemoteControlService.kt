@@ -136,7 +136,7 @@ class RemoteControlService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Telecom — 서비스 실행 중")
+            .setContentTitle("TeleControl — 서비스 실행 중")
             .setContentText("포트 $SERVER_PORT 에서 연결 대기 중입니다.")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)

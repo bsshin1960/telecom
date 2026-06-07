@@ -1,6 +1,6 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
-    <style name="Theme.Telecom" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <style name="Theme.TeleControl" parent="Theme.AppCompat.DayNight.NoActionBar">
         <!-- Primary brand color. -->
     </style>
 </resources>

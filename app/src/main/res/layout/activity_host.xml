@@ -127,5 +127,23 @@
                 android:insetBottom="0dp"/>
         </LinearLayout>
 
+        <!-- Spacer to push copyright to the bottom -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- Copyright Notice -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Copyright © 2026 Shinbosung All rights reserved."
+            android:textColor="#888888"
+            android:textSize="12sp"
+            android:textStyle="italic"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="8dp"/>
+
     </LinearLayout>
 </ScrollView>

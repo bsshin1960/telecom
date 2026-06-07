@@ -233,9 +233,9 @@ class HostActivity : AppCompatActivity() {
         }
         layout.addView(introText)
 
-        // Section 1: ADB
+        // Section 1: Manual
         val section1Title = TextView(this).apply {
-            text = "방법 1. PC에서 ADB 명령 실행 (권장)"
+            text = "방법 1. 스마트폰 단독 수동 설정 (3단계 순서대로 진행)"
             setTextColor(0xFF03DAC6.toInt()) // Teal
             textSize = 15f
             paint.isFakeBoldText = true
@@ -249,115 +249,10 @@ class HostActivity : AppCompatActivity() {
         layout.addView(section1Title)
 
         val section1Desc = TextView(this).apply {
-            text = "아래 명령어를 PC 명령 프롬프트에 실행하면 앱이 시스템에 등록되어 접근성 권한이 자동으로 켜집니다."
-            setTextColor(0xFFBBBBBB.toInt())
-            textSize = 13f
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dpToPx(6)
-            }
-        }
-        layout.addView(section1Desc)
-
-        // Command 1
-        val cmd1Text = TextView(this).apply {
-            text = pmCommand
-            setBackgroundColor(0xFF2A2A2A.toInt())
-            setTextColor(0xFFFFFFFF.toInt())
-            setPadding(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(10))
-            textSize = 12f
-            setTextIsSelectable(true)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        }
-        layout.addView(cmd1Text)
-
-        val btnCopyCmd1 = Button(this).apply {
-            text = "자동 권한 부여 명령어 복사"
-            setBackgroundColor(0xFF3700B3.toInt())
-            setTextColor(0xFFFFFFFF.toInt())
-            setOnClickListener {
-                copyToClipboard(pmCommand, "자동 권한 부여 명령어")
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dpToPx(4)
-                bottomMargin = dpToPx(12)
-            }
-        }
-        layout.addView(btnCopyCmd1)
-
-        val section1Desc2 = TextView(this).apply {
-            text = "수동으로 접근성 스위치만 활성화하려면 아래 명령으로 제한된 설정을 즉시 풀 수 있습니다."
-            setTextColor(0xFFBBBBBB.toInt())
-            textSize = 13f
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dpToPx(6)
-            }
-        }
-        layout.addView(section1Desc2)
-
-        // Command 2
-        val cmd2Text = TextView(this).apply {
-            text = appopsCommand
-            setBackgroundColor(0xFF2A2A2A.toInt())
-            setTextColor(0xFFFFFFFF.toInt())
-            setPadding(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(10))
-            textSize = 12f
-            setTextIsSelectable(true)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        }
-        layout.addView(cmd2Text)
-
-        val btnCopyCmd2 = Button(this).apply {
-            text = "제한 해제 명령어 복사"
-            setBackgroundColor(0xFF3700B3.toInt())
-            setTextColor(0xFFFFFFFF.toInt())
-            setOnClickListener {
-                copyToClipboard(appopsCommand, "제한 해제 명령어")
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dpToPx(4)
-                bottomMargin = dpToPx(20)
-            }
-        }
-        layout.addView(btnCopyCmd2)
-
-        // Section 2: Manual
-        val section2Title = TextView(this).apply {
-            text = "방법 2. 스마트폰 단독 수동 설정 (3단계 순서대로 진행)"
-            setTextColor(0xFF03DAC6.toInt()) // Teal
-            textSize = 15f
-            paint.isFakeBoldText = true
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dpToPx(8)
-            }
-        }
-        layout.addView(section2Title)
-
-        val section2Desc = TextView(this).apply {
             text = "PC가 없거나 ADB 사용이 어려운 경우 아래 순서대로 제한을 풀어보세요:\n\n" +
-                    "1. **[1단계]** 아래 `[1단계: 접근성 설정 열기]`를 누르고 '설치된 앱 > Telecom'으로 들어간 뒤 제한 경고 팝업이 뜨면 [확인]을 누르고 뒤로 가기로 돌아옵니다.\n\n" +
+                    "1. **[1단계]** 아래 `[1단계: 접근성 설정 열기]`를 누르고 '설치된 앱 > TeleControl'으로 들어간 뒤 제한 경고 팝업이 뜨면 [확인]을 누르고 뒤로 가기로 돌아옵니다.\n\n" +
                     "2. **[2단계]** 아래 `[2단계: 애플리케이션 정보 열기]`를 눌러 이동한 후, 우측 상단의 [점 3개 메뉴] -> [제한된 설정 허용]을 선택합니다. (생체 인식/패턴 인증 필요)\n\n" +
-                    "3. **[3단계]** 아래 `[3단계: 접근성 설정 열기 (최종 활성화)]`를 눌러 다시 '설치된 앱 > Telecom'으로 이동하여 접근성 스위치를 활성화합니다.\n\n" +
+                    "3. **[3단계]** 아래 `[3단계: 접근성 설정 열기 (최종 활성화)]`를 눌러 다시 '설치된 앱 > TeleControl'으로 이동하여 접근성 스위치를 활성화합니다.\n\n" +
                     "※ 반드시 1단계를 거쳐 차단 경고창을 먼저 띄우셔야만 2단계의 점 3개 메뉴가 나타납니다!"
             setTextColor(0xFFBBBBBB.toInt())
             textSize = 13f
@@ -368,7 +263,7 @@ class HostActivity : AppCompatActivity() {
                 bottomMargin = dpToPx(12)
             }
         }
-        layout.addView(section2Desc)
+        layout.addView(section1Desc)
 
         val btnOpenAccessibility1 = Button(this).apply {
             text = "1단계: 접근성 설정 열기 (차단 팝업 띄우기)"
@@ -413,10 +308,115 @@ class HostActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dpToPx(8)
+                bottomMargin = dpToPx(20)
             }
         }
         layout.addView(btnOpenAccessibility2)
+
+        // Section 2: ADB
+        val section2Title = TextView(this).apply {
+            text = "방법 2. PC에서 ADB 명령 실행 (권장)"
+            setTextColor(0xFF03DAC6.toInt()) // Teal
+            textSize = 15f
+            paint.isFakeBoldText = true
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dpToPx(8)
+            }
+        }
+        layout.addView(section2Title)
+
+        val section2Desc = TextView(this).apply {
+            text = "아래 명령어를 PC 명령 프롬프트에 실행하면 앱이 시스템에 등록되어 접근성 권한이 자동으로 켜집니다."
+            setTextColor(0xFFBBBBBB.toInt())
+            textSize = 13f
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dpToPx(6)
+            }
+        }
+        layout.addView(section2Desc)
+
+        // Command 1
+        val cmd1Text = TextView(this).apply {
+            text = pmCommand
+            setBackgroundColor(0xFF2A2A2A.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setPadding(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(10))
+            textSize = 12f
+            setTextIsSelectable(true)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        layout.addView(cmd1Text)
+
+        val btnCopyCmd1 = Button(this).apply {
+            text = "자동 권한 부여 명령어 복사"
+            setBackgroundColor(0xFF3700B3.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnClickListener {
+                copyToClipboard(pmCommand, "자동 권한 부여 명령어")
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dpToPx(4)
+                bottomMargin = dpToPx(12)
+            }
+        }
+        layout.addView(btnCopyCmd1)
+
+        val section2Desc2 = TextView(this).apply {
+            text = "수동으로 접근성 스위치만 활성화하려면 아래 명령으로 제한된 설정을 즉시 풀 수 있습니다."
+            setTextColor(0xFFBBBBBB.toInt())
+            textSize = 13f
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dpToPx(6)
+            }
+        }
+        layout.addView(section2Desc2)
+
+        // Command 2
+        val cmd2Text = TextView(this).apply {
+            text = appopsCommand
+            setBackgroundColor(0xFF2A2A2A.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setPadding(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(10))
+            textSize = 12f
+            setTextIsSelectable(true)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        layout.addView(cmd2Text)
+
+        val btnCopyCmd2 = Button(this).apply {
+            text = "제한 해제 명령어 복사"
+            setBackgroundColor(0xFF3700B3.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnClickListener {
+                copyToClipboard(appopsCommand, "제한 해제 명령어")
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dpToPx(4)
+                bottomMargin = dpToPx(8)
+            }
+        }
+        layout.addView(btnCopyCmd2)
 
         AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle("⚙️ 접근성 및 제한된 설정 해결")

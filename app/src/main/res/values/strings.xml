@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Telecom</string>
+    <string name="app_name">TeleControl</string>
     <string name="accessibility_service_description">원격 도움 기기(Client)로부터 터치 입력을 전달받아 이 기기(Host)의 화면에서 터치 동작을 수행하기 위해 사용됩니다. 화면 정보는 수집하거나 서버로 전송되지 않습니다.</string>
     <string name="accessibility_disclosure_title">원격 터치 도움을 위한 접근성 권한 안내</string>
     <string name="accessibility_disclosure_message">이 앱은 원격 도움 기기(Client)에서 들어오는 터치 및 제스처 동작을 이 기기(Host)의 화면에 실행하기 위해 접근성 서비스(Accessibility API)를 사용합니다.\n\n[수행하는 동작]\n- 원격 기기의 터치 좌표를 수신하여 Host 화면에 실시간 터치 및 스크롤 이벤트 주입\n\n이 서비스는 사용자 동의 하에 터치 입력 대행 목적으로만 사용되며, 화면 상의 개인정보를 수집, 저장, 유출하거나 화면 내용을 읽지 않습니다.\n\n동의하시겠습니까?</string>
