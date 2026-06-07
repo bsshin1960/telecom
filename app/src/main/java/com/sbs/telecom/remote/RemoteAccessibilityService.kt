@@ -88,17 +88,17 @@ class RemoteAccessibilityService : AccessibilityService() {
             MotionEvent.ACTION_UP -> {
                 if (gesturePoints.isNotEmpty()) {
                     gesturePoints.add(GesturePoint(x, y, currentTime))
-                    dispatchBufferedGesture()
+                    dispatchBufferedGesture(xRatio, yRatio)
                 } else {
                     // ACTION_DOWN이 누락된 경우 — 단일 탭으로 처리
                     gesturePoints.add(GesturePoint(x, y, currentTime))
-                    dispatchBufferedGesture()
+                    dispatchBufferedGesture(xRatio, yRatio)
                 }
             }
         }
     }
 
-    private fun dispatchBufferedGesture() {
+    private fun dispatchBufferedGesture(xRatio: Float, yRatio: Float) {
         if (gesturePoints.isEmpty()) return
 
         val builder = GestureDescription.Builder()
@@ -116,65 +116,77 @@ class RemoteAccessibilityService : AccessibilityService() {
         val density = resources.displayMetrics.density
         val tapThreshold = 15f * density
 
-        if (points.size == 1 || totalDistance < tapThreshold) {
+        val isTap = points.size == 1 || totalDistance < tapThreshold
+
+        // 1. 네비게이션 바 영역(yRatio > 0.94f)의 탭인 경우, 시스템 Global Action을 직접 수행하여 100% 확실히 제어합니다.
+        if (isTap && yRatio > 0.94f) {
+            val isSamsung = android.os.Build.MANUFACTURER.lowercase().contains("samsung")
+            var keyOrder = "recents-home-back" // 삼성 기본값
+            try {
+                val settingsOrder = android.provider.Settings.Secure.getString(contentResolver, "navigationbar_key_order")
+                if (settingsOrder != null) {
+                    keyOrder = settingsOrder
+                } else if (!isSamsung) {
+                    keyOrder = "back-home-recents" // AOSP/Pixel 기본값
+                }
+            } catch (e: Exception) {
+                if (!isSamsung) keyOrder = "back-home-recents"
+            }
+
+            val isBackOnLeft = keyOrder.startsWith("back")
+
+            if (xRatio >= 0.35f && xRatio <= 0.65f) {
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                Log.d(TAG, "Nav Bar Click: HOME performed via Global Action")
+                return
+            } else if (xRatio < 0.35f) {
+                if (isBackOnLeft) {
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    Log.d(TAG, "Nav Bar Click: BACK performed via Global Action")
+                } else {
+                    performGlobalAction(GLOBAL_ACTION_RECENTS)
+                    Log.d(TAG, "Nav Bar Click: RECENTS performed via Global Action")
+                }
+                return
+            } else { // xRatio > 0.65f
+                if (isBackOnLeft) {
+                    performGlobalAction(GLOBAL_ACTION_RECENTS)
+                    Log.d(TAG, "Nav Bar Click: RECENTS performed via Global Action")
+                } else {
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    Log.d(TAG, "Nav Bar Click: BACK performed via Global Action")
+                }
+                return
+            }
+        }
+
+        // 2. 일반 영역의 제스처 주입 처리
+        if (isTap) {
             // 단일 탭 / 클릭 처리 (이동 거리가 작으면 탭으로 강제 변환)
             val path = Path().apply {
                 moveTo(start.x, start.y)
                 lineTo(start.x + 1f, start.y + 1f)
             }
-            // 탭 누름 지속시간을 100ms로 소폭 증가시켜 시스템 네비게이션 버튼이 정확히 누르도록 조치합니다.
+            // 탭 누름 지속시간을 100ms로 소폭 증가시켜 시스템이 정확히 누르도록 조치합니다.
             val stroke = GestureDescription.StrokeDescription(path, 0, 100)
             builder.addStroke(stroke)
             Log.d(TAG, "dispatchBufferedGesture: TAP at (${start.x}, ${start.y}), distance=$totalDistance")
-        } else if (points.size == 2) {
-            // 두 점짜리 단순 스와이프 — continueStroke 불필요
+        } else {
+            // 멀티 세그먼트 드래그/스와이프 — 단일 StrokeDescription에 멀티 세그먼트 Path를 담아 처리
+            // continueStroke 체이닝 방식보다 오류율이 훨씬 적고, 자연스럽게 홈 화면 페이지 전환 등이 작동합니다.
             val path = Path().apply {
                 moveTo(points[0].x, points[0].y)
-                lineTo(points[1].x, points[1].y)
+                for (i in 1 until points.size) {
+                    lineTo(points[i].x, points[i].y)
+                }
             }
-            var duration = points[1].time - points[0].time
-            if (duration <= 0) duration = 50
+            var duration = points.last().time - points.first().time
+            if (duration < 250) {
+                duration = 250L // 자연스러운 스와이프 페이지 넘김이 동작하도록 최소 250ms 보장
+            }
             val stroke = GestureDescription.StrokeDescription(path, 0, duration)
             builder.addStroke(stroke)
-            Log.d(TAG, "dispatchBufferedGesture: SWIPE 2pts, duration=$duration")
-        } else {
-            // 멀티 세그먼트 드래그/스와이프 — continueStroke 체이닝
-            // 핵심 수정: addStroke는 첫 번째 세그먼트에 대해서만 호출하고,
-            // 이후 세그먼트들은 continueStroke로 체이닝만 한다.
-            // 마지막 세그먼트의 willContinue=false로 체인을 종료한 후 addStroke 한다.
-            var currentStroke: GestureDescription.StrokeDescription? = null
-
-            for (i in 1 until points.size) {
-                val prevPoint = points[i - 1]
-                val nextPoint = points[i]
-                var duration = nextPoint.time - prevPoint.time
-                if (duration <= 0) duration = 1 // 0 이하일 수 없으므로 최소 1ms 지정
-
-                val path = Path().apply {
-                    moveTo(prevPoint.x, prevPoint.y)
-                    if (prevPoint.x == nextPoint.x && prevPoint.y == nextPoint.y) {
-                        lineTo(nextPoint.x + 0.1f, nextPoint.y + 0.1f)
-                    } else {
-                        lineTo(nextPoint.x, nextPoint.y)
-                    }
-                }
-
-                val willContinue = (i < points.size - 1)
-
-                currentStroke = if (currentStroke == null) {
-                    // 첫 번째 세그먼트
-                    GestureDescription.StrokeDescription(path, 0, duration, willContinue)
-                } else {
-                    // 후속 세그먼트 — 이전 스트로크에 체이닝
-                    currentStroke.continueStroke(path, 0, duration, willContinue)
-                }
-            }
-
-            // 체이닝이 완료된 최종 스트로크를 한 번만 추가
-            if (currentStroke != null) {
-                builder.addStroke(currentStroke)
-            }
-            Log.d(TAG, "dispatchBufferedGesture: DRAG ${points.size}pts")
+            Log.d(TAG, "dispatchBufferedGesture: SWIPE/DRAG multi-pts, duration=$duration, points=${points.size}")
         }
 
         try {
