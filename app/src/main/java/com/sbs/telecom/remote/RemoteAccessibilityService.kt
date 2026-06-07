@@ -94,15 +94,26 @@ class RemoteAccessibilityService : AccessibilityService() {
         val points = gesturePoints.toList()
         gesturePoints.clear()
 
-        if (points.size == 1) {
-            // 단일 탭 / 클릭 처리
+        // 첫 번째 점과 마지막 점 사이의 이동 거리를 계산하여 탭 여부를 더 정확히 판별
+        val start = points.first()
+        val end = points.last()
+        val dx = end.x - start.x
+        val dy = end.y - start.y
+        val totalDistance = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+
+        // 탭 판단 기준 거리 (15dp 정도를 기준으로 설정)
+        val density = resources.displayMetrics.density
+        val tapThreshold = 15f * density
+
+        if (points.size == 1 || totalDistance < tapThreshold) {
+            // 단일 탭 / 클릭 처리 (이동 거리가 작으면 탭으로 강제 변환)
             val path = Path().apply {
-                moveTo(points[0].x, points[0].y)
-                lineTo(points[0].x + 1f, points[0].y + 1f)
+                moveTo(start.x, start.y)
+                lineTo(start.x + 1f, start.y + 1f)
             }
             val stroke = GestureDescription.StrokeDescription(path, 0, 50)
             builder.addStroke(stroke)
-            Log.d(TAG, "dispatchBufferedGesture: TAP at (${points[0].x}, ${points[0].y})")
+            Log.d(TAG, "dispatchBufferedGesture: TAP at (${start.x}, ${start.y}), distance=$totalDistance")
         } else if (points.size == 2) {
             // 두 점짜리 단순 스와이프 — continueStroke 불필요
             val path = Path().apply {
