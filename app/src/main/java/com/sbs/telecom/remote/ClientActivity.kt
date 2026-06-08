@@ -61,6 +61,9 @@ class ClientActivity : AppCompatActivity() {
     
     private var audioTrack: AudioTrack? = null
 
+    // Host 화면의 가로/세로 상태를 추적하여 방향 전환을 1회만 수행합니다
+    private var lastHostIsLandscape: Boolean? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityClientBinding.inflate(layoutInflater)
@@ -132,9 +135,12 @@ class ClientActivity : AppCompatActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         Log.d(TAG, "onConfigurationChanged: orientation=${newConfig.orientation}")
-        // 뷰 크기가 변경되었으므로 재측정 및 재그리기를 강제합니다.
+        // 뷰 크기가 변경되었으므로 재측정을 요청하고,
+        // 레이아웃이 완료된 후 확실하게 다시 그리기를 수행합니다.
         binding.remoteDisplayView.requestLayout()
-        binding.remoteDisplayView.invalidate()
+        binding.remoteDisplayView.postDelayed({
+            binding.remoteDisplayView.invalidate()
+        }, 150)
     }
 
     private fun connectToHost(ip: String) {
@@ -191,6 +197,17 @@ class ClientActivity : AppCompatActivity() {
                                         if (bitmap != null) {
                                             withContext(Dispatchers.Main) {
                                                 binding.remoteDisplayView.updateFrame(bitmap)
+
+                                                // Host 화면 방향이 변경되었을 때만 1회 회전 요청
+                                                val isHostLandscape = bitmap.width > bitmap.height
+                                                if (isHostLandscape != lastHostIsLandscape) {
+                                                    lastHostIsLandscape = isHostLandscape
+                                                    requestedOrientation = if (isHostLandscape) {
+                                                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                                                    } else {
+                                                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                                                    }
+                                                }
                                             }
                                         } else {
                                             Log.w(TAG, "Failed to decode video frame (${bytes.size} bytes)")
