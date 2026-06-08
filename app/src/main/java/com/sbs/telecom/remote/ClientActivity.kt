@@ -334,6 +334,13 @@ class ClientActivity : AppCompatActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && (connectionJob?.isActive == true || isFullScreenMode)) {
+            setImmersiveMode(true)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         touchSenderJob?.cancel()

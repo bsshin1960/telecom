@@ -65,33 +65,33 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:src="@android:drawable/ic_media_previous"
+            android:src="@drawable/ic_nav_back"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="뒤로가기"
             android:scaleType="centerInside"
-            android:tint="#AAAAAA" />
+            android:tint="#FFFFFF" />
 
         <ImageButton
             android:id="@+id/btnNavHome"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:src="@android:drawable/ic_menu_myplaces"
+            android:src="@drawable/ic_nav_home"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="홈"
             android:scaleType="centerInside"
-            android:tint="#AAAAAA" />
+            android:tint="#FFFFFF" />
 
         <ImageButton
             android:id="@+id/btnNavRecent"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:src="@android:drawable/ic_menu_recent_history"
+            android:src="@drawable/ic_nav_recent"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="최근 앱"
             android:scaleType="centerInside"
-            android:tint="#AAAAAA" />
+            android:tint="#FFFFFF" />
     </LinearLayout>
 
 </RelativeLayout>
