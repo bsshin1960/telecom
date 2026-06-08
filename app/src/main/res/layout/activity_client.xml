@@ -46,6 +46,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_below="@id/connectionPanel"
+        android:layout_above="@id/navBar"
         android:background="#000000" />
 
     <!-- Bottom Navigation Bar (Back / Home / Recent) -->
@@ -56,7 +57,7 @@
         android:layout_alignParentBottom="true"
         android:orientation="horizontal"
         android:gravity="center"
-        android:background="#991A1A1A"
+        android:background="#1A1A1A"
         android:elevation="4dp">
 
         <ImageButton
