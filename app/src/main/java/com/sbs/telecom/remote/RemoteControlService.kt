@@ -573,11 +573,6 @@ class RemoteControlService : Service() {
         Log.d(TAG, "recreateVirtualDisplay: updating resolution")
         
         try {
-            virtualDisplay?.release()
-            virtualDisplay = null
-            imageReader?.close()
-            imageReader = null
-            
             val (realWidth, realHeight) = getRealScreenSize()
             val scale = 0.5f
             captureWidth = (realWidth * scale).toInt()
@@ -586,21 +581,37 @@ class RemoteControlService : Service() {
             
             Log.d(TAG, "recreateVirtualDisplay: new resolution=${realWidth}x${realHeight}, capture=${captureWidth}x${captureHeight}")
             
-            imageReader = ImageReader.newInstance(captureWidth, captureHeight, PixelFormat.RGBA_8888, 4)
-            imageReader?.setOnImageAvailableListener({ reader ->
+            // 새 해상도의 ImageReader 생성
+            val newImageReader = ImageReader.newInstance(captureWidth, captureHeight, PixelFormat.RGBA_8888, 4)
+            newImageReader.setOnImageAvailableListener({ reader ->
                 processImageFromReader(reader)
             }, backgroundHandler)
             
-            virtualDisplay = mp.createVirtualDisplay(
-                "RemoteCapture",
-                captureWidth,
-                captureHeight,
-                density,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader!!.surface,
-                null,
-                backgroundHandler
-            )
+            val vd = virtualDisplay
+            if (vd != null) {
+                // 안드로이드 14 이상(Android 16 포함) 보안 가이드에 부합하도록
+                // VirtualDisplay를 파괴하고 다시 만드는 대신 resize() 및 setSurface()를 사용합니다.
+                Log.d(TAG, "recreateVirtualDisplay: resizing existing VirtualDisplay")
+                vd.resize(captureWidth, captureHeight, density)
+                vd.setSurface(newImageReader.surface)
+                
+                // 기존 ImageReader 자원 해제
+                imageReader?.close()
+                imageReader = newImageReader
+            } else {
+                Log.d(TAG, "recreateVirtualDisplay: creating new VirtualDisplay")
+                imageReader = newImageReader
+                virtualDisplay = mp.createVirtualDisplay(
+                    "RemoteCapture",
+                    captureWidth,
+                    captureHeight,
+                    density,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                    imageReader!!.surface,
+                    null,
+                    backgroundHandler
+                )
+            }
         } catch (e: java.lang.Exception) {
             Log.e(TAG, "Error in recreateVirtualDisplay: ${e.message}", e)
         }
