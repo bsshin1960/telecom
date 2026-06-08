@@ -96,6 +96,35 @@ class ClientActivity : AppCompatActivity() {
             }
         }
 
+        // 스와이프 업 제스처 감지하여 내비게이션 바 보이기 설정
+        var touchStartX = 0f
+        var touchStartY = 0f
+        binding.remoteDisplayView.setOnTouchListener { v, event ->
+            // 중요: 터치 이벤트를 RemoteDisplayView의 onTouchEvent로 강제 전달하여
+            // 화면 탭이나 원격 터치 조작이 그대로 전달되도록 보장합니다.
+            binding.remoteDisplayView.onTouchEvent(event)
+
+            // 스와이프 업 제스처 감지
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    touchStartX = event.x
+                    touchStartY = event.y
+                }
+                MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP -> {
+                    val deltaY = touchStartY - event.y
+                    val deltaX = Math.abs(event.x - touchStartX)
+                    val viewHeight = v.height
+                    
+                    // 터치 시작 지점이 화면 하단 20% 이내이고, 위 방향으로 80픽셀 이상 드래그되었을 때
+                    if (touchStartY > viewHeight * 0.8f && deltaY > 80f && deltaX < 150f) {
+                        showNavBarTemporarily()
+                    }
+                }
+            }
+            // true를 반환하여 ACTION_MOVE와 ACTION_UP 이벤트를 끝까지 수신합니다.
+            true
+        }
+
 
         // 가상 네비게이션 버튼 설정 — Host 기기에 홈/뒤로/최근앱 명령을 전송
         binding.btnNavBack.setOnClickListener {
@@ -166,7 +195,7 @@ class ClientActivity : AppCompatActivity() {
                         binding.btnConnect.text = "연결 끊기"
                         binding.btnConnect.isEnabled = true
                         Toast.makeText(this@ClientActivity, "서버에 연결되었습니다.", Toast.LENGTH_SHORT).show()
-                        binding.navBar.visibility = android.view.View.VISIBLE
+                        showNavBarTemporarily() // 연결 완료 시 내비게이션 바 3초간 노출 안내
                         setImmersiveMode(true)
                     }
 
@@ -334,6 +363,17 @@ class ClientActivity : AppCompatActivity() {
         }
     }
 
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private val hideNavBarRunnable = Runnable {
+        binding.navBar.visibility = android.view.View.GONE
+    }
+
+    private fun showNavBarTemporarily() {
+        uiHandler.removeCallbacks(hideNavBarRunnable)
+        binding.navBar.visibility = android.view.View.VISIBLE
+        uiHandler.postDelayed(hideNavBarRunnable, 3000) // 3초 후 자동 숨김
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && (connectionJob?.isActive == true || isFullScreenMode)) {
@@ -343,6 +383,7 @@ class ClientActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        uiHandler.removeCallbacks(hideNavBarRunnable)
         touchSenderJob?.cancel()
         connectionJob?.cancel()
         touchChannel.close()

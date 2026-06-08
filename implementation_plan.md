@@ -59,12 +59,17 @@ sequenceDiagram
 
 프로젝트 루트 디렉토리([telecom](file:///c:/Temp/antigravity/telecom))에 구현된 구조와 최근의 기능 개선 상세 내역입니다.
 
-### 1) UI 및 모드 제어 (도움 받기 중심의 친숙한 용어 정립)
+### 1) UI 및 모드 제어 (도움 받기 중심의 친숙한 용어 정립 및 도움 주기 전체화면 개선)
 *   `MainActivity`: 앱 진입점. **도움 받기 (Host)** 모드와 **제어 하기 (Client)** 모드를 선택하는 UI 제공.
 *   `HostActivity`: 피제어 상태 UI. 내 IP 주소 표시, **원격 도움 받기** 서버 구동 및 **원격 도움 요청/중단** 제어 기능.
     *   **접근성 권한 간소화:** "접근성 권한 설정" 버튼 명칭을 **"권한 설정"**으로 간결화.
     *   **5초 자동 닫힘 안내 팝업:** 기기 최초 설정 시, 혹은 권한이 누락된 상태에서 도움 요청을 보낼 때 ADB 권한 설정 명령어를 포함한 간단명료한 안내 창을 띄우고 **5초 후에 자동으로 닫히도록(Auto-dismiss)** 하여 사용성을 높임.
-*   `ClientActivity`: 제어 화면 UI. 접속할 Host의 IP 주소 입력창 제공, 실시간 화면 수신용 커스텀 뷰(`RemoteDisplayView`) 탑재.
+*   `ClientActivity` & [activity_client.xml](file:///c:/Temp/Antigrvity/telecom/app/src/main/res/layout/activity_client.xml):
+    *   **100% 전체화면 미러링 뷰 구현:** 기존 상단 타이틀바 영역을 제거하고 `RemoteDisplayView`가 화면 하단 끝까지 가득 채우도록 레이아웃 구조 수정.
+    *   **자동 숨김 가상 제어 바 제스처:** 평상시에는 가상 제어 바(`navBar`)가 완전히 숨겨져(`View.GONE`) 미러링 화면을 가득 채우며, 화면 하단 20% 영역에서 위로 스와이프할 때만 반투명 블랙 오버레이 제어 바가 나타남. 3초간 입력이 없으면 다시 자동으로 숨김.
+    *   **터치 유실 없는 연동:** 스와이프 감지용 온터치 리스너가 `true`를 반환하도록 조치하여 드래그/업 이벤트를 모두 추적하게 하고, 리스너 내부에서 `remoteDisplayView.onTouchEvent(event)`를 직접 호출함으로써 원격 클릭 및 드래그 조작이 유실 없이 100% 정상 전달되도록 구현.
+    *   **네비게이션 아이콘 가시성 개선:** 기존 텍스트 버튼 대신 안드로이드 스타일의 직관적인 디자인인 `<` (`ic_nav_back.xml`), `O` (`ic_nav_home.xml`), `|||` (`ic_nav_recent.xml`) 벡터 그래픽 아이콘으로 전면 교체하여 70% 반투명 블랙 배경 위에 화이트 틴트로 돋보이게 배치.
+    *   **시스템 몰입형 모드(Immersive Mode) 유지:** 연결 수립 시 및 `onWindowFocusChanged()` 콜백 발생 시 도움 주기의 시스템 상태 바 및 시스템 네비게이션 바를 완전히 숨김 처리하여 원격 도움 받기 화면과의 중첩/혼선을 원천 차단.
 
 ### 2) 커스텀 뷰 및 터치 제어
 *   `RemoteDisplayView` (Client 기기용 커스텀 `View`):
@@ -73,18 +78,19 @@ sequenceDiagram
 
 ### 3) 백그라운드 서비스 및 통신 (핵심 최적화 완료)
 *   `RemoteControlService` (`Foreground Service`):
-    *   **동기식 프레임 획득 체계:** `onImageAvailable` 콜백에서 이미지를 비동기 코루틴으로 처리할 때 생기는 `MaxImagesAcquiredException` 버퍼 부족을 막기 위해, 즉각적인 `acquireLatestImage` 획득 후 즉시 close()를 수행하는 동기식 인코딩 처리 루틴으로 수정.
+    *   **동기식 프레임 획득 체계:** `onImageAvailable` 콜백에서 이미지를 비동기 코루틴으로 처리할 때 생기는 `MaxImagesAcquiredException` 버퍼 부족을 막기 위해, 즉각적인 `acquireLatestImage` 획득 후 즉시 `close()`를 수행하는 동기식 인코딩 처리 루틴으로 수정.
     *   **300ms 주기적 프레임 캡처 스케줄링:** 다른 앱으로 전환되거나 화면 변동이 발생했을 때 시스템 렌더링에 의해 콜백이 지연되는 문제를 해결하고자 백그라운드 스레드에서 주기적으로 프레임을 체크하여 실시간으로 동기화되도록 보장.
 *   `RemoteAccessibilityService` (`AccessibilityService`):
     *   `RemoteControlService`로부터 좌표를 받아 제스처 동작을 주입.
-    *   스와이프 및 드래그 동작 시 `continueStroke`의 올바른 체이닝 순서를 구현하여 예외(IllegalStateException) 없이 제어 명령이 매끄럽게 흐르도록 패치.
+    *   스와이프 및 드래그 동작 시 `continueStroke`의 올바른 체이닝 순서를 구현하여 예외(`IllegalStateException`) 없이 제어 명령이 매끄럽게 흐르도록 패치.
 
 ---
 
 ## 5. 테스트 및 검증 결과
 
-*   **컴파일 및 빌드:** Gradle 환경에서 성공적으로 `app-debug.apk` 및 `app-release.apk` 빌드 완료.
+*   **컴파일 및 빌드:** Gradle 환경에서 성공적으로 `app-debug.apk` 및 `app-release.apk` 빌드 완료하여 프로젝트 루트 디렉토리에 배치.
 *   **실 기기 2대 배치 테스트:**
     - `R3CWC0FS23Y` 및 `ce0817180c8050850c7e` 실물 기기에서 덮어쓰기 업데이트 설치 완료.
-    - Host 스마트폰에서 홈 화면이나 타 앱 화면으로 이동하더라도 Client 모니터링 화면이 실시간으로 끊김 없이 갱신됨을 확인.
-    - 드래그 및 터치 조작이 이상 없이 반영됨을 실 기기 상에서 검증 완료.
+    - 도움 주기(Client) 단말의 자체 시스템 하단 네비게이션 바와 상단 상태 바가 몰입 모드로 깔끔하게 사라지는 것을 확인.
+    - 화면 하단을 쓸어 올렸을 때만 전용 반투명 가상 제어 바가 부드럽게 나타나며 3초 뒤 사라지는 동작 검증.
+    - 도움 주기 단말에서 원격 터치 조작 시 터치 드래그 유실이 전혀 없이 피제어 스마트폰(Host) 화면이 정상 반응하는 것을 확인.
