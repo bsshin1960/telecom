@@ -28,16 +28,14 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.IntentCompat
-import io.ktor.server.application.install
-import io.ktor.server.cio.CIO
-import io.ktor.server.engine.ApplicationEngine
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.routing.routing
-import io.ktor.server.websocket.WebSockets
-import io.ktor.server.websocket.webSocket
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.client.plugins.websocket.ws
 import io.ktor.websocket.Frame
 import io.ktor.websocket.WebSocketSession
 import io.ktor.websocket.readText
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,11 +43,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import io.ktor.server.websocket.pingPeriod
-import io.ktor.server.websocket.timeout
 import java.io.ByteArrayOutputStream
-import java.time.Duration
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -58,7 +52,11 @@ class RemoteControlService : Service() {
     companion object {
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
-        const val SERVER_PORT = 8080
+        const val RELAY_PORT = 8080
+        // RELAY_HOST는 SharedPreferences에서 동적으로 읽습니다. getRelayHost()를 사용하세요.
+        const val PREF_NAME = "TeleControlPrefs"
+        const val PREF_KEY_RELAY_HOST = "relay_host"
+        const val DEFAULT_RELAY_HOST = "127.0.0.1" // 로컬 테스트용 기본값
 
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "RemoteControlChannel"
@@ -74,10 +72,32 @@ class RemoteControlService : Service() {
         @Volatile
         var isRunning = false
             private set
+
+        @Volatile
+        var currentSessionId: String? = null
+            internal set
+    }
+
+    /**
+     * SharedPreferences에서 릴레이 서버 호스트를 읽어 반환합니다.
+     * 설정이 없으면 DEFAULT_RELAY_HOST를 사용합니다.
+     */
+    fun getRelayHost(): String {
+        val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(PREF_KEY_RELAY_HOST, DEFAULT_RELAY_HOST) ?: DEFAULT_RELAY_HOST
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private var server: ApplicationEngine? = null
+    private val client = HttpClient(OkHttp) {
+        install(WebSockets) {
+            pingInterval = 15_000
+        }
+    }
+    private var clientJob: Job? = null
+    private var webSocketSession: WebSocketSession? = null
+
+    @Volatile
+    private var isClientConnected = false
 
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
@@ -91,8 +111,6 @@ class RemoteControlService : Service() {
 
     private var captureWidth = 0
     private var captureHeight = 0
-
-    private val activeSessions = ConcurrentHashMap.newKeySet<WebSocketSession>()
 
     // 최신 프레임을 보관하여 새 클라이언트에게 즉시 제공
     @Volatile
@@ -125,7 +143,7 @@ class RemoteControlService : Service() {
 
         if (resultCode != 0 && resultData != null) {
             startScreenCapture(resultCode, resultData)
-            startWebSocketServer()
+            startWebSocketClient()
         } else {
             Log.e(TAG, "onStartCommand: Invalid parameters — resultCode=$resultCode, resultData=$resultData. Stopping.")
             stopSelf()
@@ -152,7 +170,7 @@ class RemoteControlService : Service() {
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("TeleControl — 서비스 실행 중")
-            .setContentText("포트 $SERVER_PORT 에서 연결 대기 중입니다.")
+            .setContentText("원격 도움 서비스가 실행 중입니다.")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -208,9 +226,6 @@ class RemoteControlService : Service() {
             backgroundHandler
         )
 
-        // 핵심 수정: onImageAvailable에서 이미지 획득과 인코딩을 동기적으로 처리
-        // 이전에 코루틴으로 넘기면 acquireLatestImage()와 close() 사이에 갭이 생겨서
-        // MaxImagesAcquiredException이 발생하여 프레임 캡처가 멈출 수 있었음
         imageReader?.setOnImageAvailableListener({ reader ->
             processImageFromReader(reader)
         }, backgroundHandler)
@@ -251,9 +266,7 @@ class RemoteControlService : Service() {
      * 이 메서드는 backgroundHandler 스레드에서 동기적으로 실행됩니다.
      */
     private fun processImageFromReader(reader: ImageReader) {
-        // 연결된 세션이 없으면 프레임 인코딩 스킵 (CPU 절약)
-        // 단, 이미지는 반드시 acquire+close 해야 함 (안 하면 버퍼가 가득 참)
-        if (activeSessions.isEmpty()) {
+        if (!isClientConnected) {
             try {
                 reader.acquireLatestImage()?.close()
             } catch (_: Exception) {}
@@ -395,8 +408,6 @@ class RemoteControlService : Service() {
 
     /**
      * 주기적으로 ImageReader에서 프레임을 캡처합니다.
-     * 화면이 다른 앱으로 전환될 때 onImageAvailable 콜백만으로는 충분하지 않을 수 있으므로,
-     * 주기적으로 최신 이미지를 확인하여 클라이언트에게 전송합니다.
      */
     private fun startPeriodicCapture() {
         periodicCaptureRunnable = object : Runnable {
@@ -406,7 +417,7 @@ class RemoteControlService : Service() {
 
                 // 마지막 프레임 이후 일정 시간이 지났으면 강제 캡처 시도
                 val elapsed = System.currentTimeMillis() - lastFrameTime.get()
-                if (elapsed >= PERIODIC_CAPTURE_INTERVAL_MS && activeSessions.isNotEmpty()) {
+                if (elapsed >= PERIODIC_CAPTURE_INTERVAL_MS && isClientConnected) {
                     processImageFromReader(reader)
                 }
 
@@ -416,67 +427,102 @@ class RemoteControlService : Service() {
         backgroundHandler?.postDelayed(periodicCaptureRunnable!!, PERIODIC_CAPTURE_INTERVAL_MS)
     }
 
-    private fun startWebSocketServer() {
-        Log.d(TAG, "startWebSocketServer: starting CIO WebSocket server on port $SERVER_PORT")
-        try {
-            server = embeddedServer(CIO, port = SERVER_PORT) {
-                install(WebSockets) {
-                    pingPeriod = Duration.ofSeconds(15)
-                    timeout = Duration.ofSeconds(30)
-                    maxFrameSize = Long.MAX_VALUE // 큰 바이너리 프레임 허용
-                }
-                routing {
-                    webSocket("/control") {
-                        val remoteAddr = call.request.local.remoteAddress
-                        Log.d(TAG, "New client connected: $remoteAddr")
-                        activeSessions.add(this)
+    private fun startWebSocketClient() {
+        val relayHost = getRelayHost()
+        Log.d(TAG, "startWebSocketClient: connecting to ws://$relayHost:$RELAY_PORT/register")
+        clientJob = serviceScope.launch(Dispatchers.IO) {
+            var retryCount = 0
+            val maxRetries = 3
 
-                        try {
-                            for (frame in incoming) {
-                                if (frame is Frame.Text) {
-                                    val text = frame.readText()
+            while (isActive && retryCount <= maxRetries) {
+                if (retryCount > 0) {
+                    Log.w(TAG, "릴레이 서버 재연결 시도 $retryCount/$maxRetries ...")
+                    kotlinx.coroutines.delay(5_000L)
+                    if (!isActive) break
+                }
+
+                try {
+                    client.ws(host = relayHost, port = RELAY_PORT, path = "/register") {
+                        webSocketSession = this
+                        retryCount = 0 // 연결 성공 시 재시도 카운터 초기화
+                        Log.d(TAG, "WebSocket connected to Relay Server")
+
+                        for (frame in incoming) {
+                            if (!isActive) break
+                            if (frame is Frame.Text) {
+                                val text = frame.readText()
+                                Log.d(TAG, "Relay message: $text")
+                                if (text.startsWith("ID=")) {
+                                    val session_id = text.substringAfter("ID=").trim()
+                                    Log.d(TAG, "Session ID received: $session_id")
+                                    currentSessionId = session_id
+
+                                    val broadcastIntent = Intent("com.sbs.telecom.remote.SESSION_ID_RECEIVED").apply {
+                                        putExtra("session_id", session_id)
+                                    }
+                                    sendBroadcast(broadcastIntent)
+                                } else if (text == "CLIENT_CONNECTED") {
+                                    isClientConnected = true
+                                    Log.d(TAG, "Client connected. Sending handshake device=android")
+                                    send(Frame.Text("device=android"))
+
+                                    // Send the latest frame immediately if available
+                                    latestFrame?.let { frameData ->
+                                        send(Frame.Binary(true, frameData))
+                                    }
+                                    triggerImmediateCapture()
+                                } else if (text == "CLIENT_DISCONNECTED") {
+                                    isClientConnected = false
+                                    Log.d(TAG, "Client disconnected")
+                                } else {
                                     if (text == "CLIENT_READY") {
-                                        // 클라이언트가 준비되었으므로 최신 비디오 프레임을 즉시 전송하여 화면을 띄움
+                                        // Client ready trigger
                                         latestFrame?.let { frameData ->
                                             send(Frame.Binary(true, frameData))
-                                            Log.d(TAG, "Sent initial frame on CLIENT_READY to $remoteAddr")
+                                            Log.d(TAG, "Sent initial frame on CLIENT_READY")
                                         }
-                                        // 정지 화면에서도 즉각적인 화면 전송을 위해 강제 캡처 트리거
                                         triggerImmediateCapture()
                                     } else if (text.startsWith("NAV_")) {
-                                        // 클라이언트의 가상 네비게이션 버튼 명령 처리
                                         handleNavCommand(text)
                                     } else {
                                         parseAndInjectTouch(text)
                                     }
                                 }
                             }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "WebSocket session error: ${e.message}")
-                        } finally {
-                            Log.d(TAG, "Client disconnected: $remoteAddr")
-                            activeSessions.remove(this)
                         }
                     }
+                    // WebSocket 블록이 정상 종료되면 재시도 불필요
+                    break
+                } catch (e: CancellationException) {
+                    Log.d(TAG, "WebSocket connection cancelled")
+                    break
+                } catch (e: Exception) {
+                    Log.e(TAG, "WebSocket connection error (attempt ${retryCount + 1}): ${e.message}")
+                    retryCount++
+                    if (retryCount > maxRetries) {
+                        Log.e(TAG, "최대 재연결 횟수 초과. 서비스를 중단합니다.")
+                        // UI에 알림 브로드캐스트
+                        sendBroadcast(Intent("com.sbs.telecom.remote.SESSION_ID_RECEIVED").apply {
+                            putExtra("session_id", "ERROR")
+                        })
+                    }
+                } finally {
+                    webSocketSession = null
+                    isClientConnected = false
                 }
-            }.apply { start(wait = false) }
-            Log.d(TAG, "startWebSocketServer: Server started successfully on port $SERVER_PORT")
-        } catch (e: Exception) {
-            Log.e(TAG, "startWebSocketServer: FAILED to start server — ${e.message}", e)
+            }
         }
     }
 
     private fun broadcastFrame(bytes: ByteArray) {
-        for (session in activeSessions) {
-            serviceScope.launch {
-                try {
-                    if (session.isActive) {
-                        session.send(Frame.Binary(true, bytes))
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "broadcastFrame send error: ${e.message}")
-                    activeSessions.remove(session)
+        val session = webSocketSession ?: return
+        serviceScope.launch {
+            try {
+                if (session.isActive && isClientConnected) {
+                    session.send(Frame.Binary(true, bytes))
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Send frame error: ${e.message}")
             }
         }
     }
@@ -500,7 +546,7 @@ class RemoteControlService : Service() {
                     Log.d(TAG, "parseAndInjectTouch: dispatching action=$action, x=$x, y=$y")
                     service.injectTouch(action, x, y)
                 } else {
-                    Log.w(TAG, "parseAndInjectTouch: AccessibilityService instance is null — touch ignored. 접근성 서비스를 활성화하세요.")
+                    Log.w(TAG, "parseAndInjectTouch: AccessibilityService instance is null — touch ignored.")
                 }
             } else {
                 Log.w(TAG, "parseAndInjectTouch: invalid params — action=$action, x=$x, y=$y from '$text'")
@@ -591,8 +637,6 @@ class RemoteControlService : Service() {
             
             val vd = virtualDisplay
             if (vd != null) {
-                // 안드로이드 14 이상(Android 16 포함) 보안 가이드에 부합하도록
-                // VirtualDisplay를 파괴하고 다시 만드는 대신 resize() 및 setSurface()를 사용합니다.
                 Log.d(TAG, "recreateVirtualDisplay: resizing existing VirtualDisplay")
                 vd.resize(captureWidth, captureHeight, density)
                 vd.setSurface(newImageReader.surface)
@@ -641,6 +685,7 @@ class RemoteControlService : Service() {
         super.onDestroy()
         Log.d(TAG, "onDestroy: cleaning up resources")
         isRunning = false
+        currentSessionId = null
 
         // DisplayListener 해제
         displayListener?.let {
@@ -664,7 +709,8 @@ class RemoteControlService : Service() {
             Log.e(TAG, "AudioRecord cleanup error: ${e.message}")
         }
 
-        try { server?.stop(1000, 2000) } catch (e: Exception) { Log.e(TAG, "Server stop error: ${e.message}") }
+        try { clientJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Client job cancel error: ${e.message}") }
+        try { client.close() } catch (e: Exception) { Log.e(TAG, "Client close error: ${e.message}") }
         try { virtualDisplay?.release() } catch (e: Exception) {}
         try { mediaProjection?.stop() } catch (e: Exception) {}
         try { imageReader?.close() } catch (e: Exception) {}

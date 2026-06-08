@@ -20,6 +20,7 @@ import io.ktor.client.plugins.websocket.ws
 import io.ktor.websocket.Frame
 import io.ktor.websocket.WebSocketSession
 import io.ktor.websocket.readBytes
+import io.ktor.websocket.readText
 import io.ktor.websocket.send
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -79,11 +80,17 @@ class ClientActivity : AppCompatActivity() {
             if (connectionJob?.isActive == true) {
                 disconnect()
             } else {
-                val ip = binding.edtIpAddress.text.toString().trim()
-                if (ip.isEmpty()) {
-                    Toast.makeText(this, "IP 주소를 입력해 주세요.", Toast.LENGTH_SHORT).show()
-                } else {
-                    connectToHost(ip)
+                val input = binding.edtIpAddress.text.toString().trim()
+                when {
+                    input.isEmpty() -> {
+                        Toast.makeText(this, "연결 ID를 입력해 주세요.", Toast.LENGTH_SHORT).show()
+                    }
+                    input.length != 6 || !input.all { it.isDigit() } -> {
+                        Toast.makeText(this, "올바른 6자리 숫자를 입력해 주세요. (예: 382910)", Toast.LENGTH_SHORT).show()
+                    }
+                    else -> {
+                        connectToHost(input)
+                    }
                 }
             }
         }
@@ -166,12 +173,16 @@ class ClientActivity : AppCompatActivity() {
         binding.btnConnect.text = "연결 중..."
         binding.btnConnect.isEnabled = false
 
+        val prefs = getSharedPreferences(RemoteControlService.PREF_NAME, MODE_PRIVATE)
+        val relayHost = prefs.getString(RemoteControlService.PREF_KEY_RELAY_HOST, RemoteControlService.DEFAULT_RELAY_HOST) ?: RemoteControlService.DEFAULT_RELAY_HOST
+        val relayPort = RemoteControlService.RELAY_PORT
+
         // 핵심 수정: WebSocket 연결을 IO 디스패처에서 수행
         // Main 디스패처에서 실행하면 네트워크 작업으로 ANR 발생
         connectionJob = activityScope.launch(Dispatchers.IO) {
             try {
-                Log.d(TAG, "Connecting to ws://$ip:8080/control")
-                client.ws(host = ip, port = 8080, path = "/control") {
+                Log.d(TAG, "Connecting to ws://$relayHost:$relayPort/join/$ip")
+                client.ws(host = relayHost, port = relayPort, path = "/join/$ip") {
                     webSocketSession = this
                     Log.d(TAG, "WebSocket connected successfully")
 
@@ -194,7 +205,7 @@ class ClientActivity : AppCompatActivity() {
                     withContext(Dispatchers.Main) {
                         binding.btnConnect.text = "연결 끊기"
                         binding.btnConnect.isEnabled = true
-                        Toast.makeText(this@ClientActivity, "서버에 연결되었습니다.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@ClientActivity, "릴레이 서버 접속 완료.", Toast.LENGTH_SHORT).show()
                         showNavBarTemporarily() // 연결 완료 시 내비게이션 바 3초간 노출 안내
                         setImmersiveMode(true)
                     }
@@ -239,8 +250,26 @@ class ClientActivity : AppCompatActivity() {
                                 }
                             }
                             is Frame.Text -> {
-                                // 서버에서 텍스트 메시지가 올 경우 (향후 확장용)
-                                Log.d(TAG, "Received text frame")
+                                val text = frame.readText()
+                                Log.d(TAG, "Received text frame: $text")
+                                if (text.startsWith("ERROR:")) {
+                                    withContext(Dispatchers.Main) {
+                                        val errMsg = when (text) {
+                                            "ERROR: ID_NOT_FOUND" -> "오류: 연결 ID를 찾을 수 없습니다."
+                                            "ERROR: SESSION_BUSY" -> "오류: 세션이 이미 사용 중입니다."
+                                            else -> "오류: 연결할 수 없습니다. ($text)"
+                                        }
+                                        Toast.makeText(this@ClientActivity, errMsg, Toast.LENGTH_LONG).show()
+                                    }
+                                } else if (text == "CONNECTED") {
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(this@ClientActivity, "원격 호스트와 연결되었습니다 (릴레이 완료).", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else if (text == "HOST_DISCONNECTED") {
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(this@ClientActivity, "원격 호스트가 접속을 종료했습니다.", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                             }
                             else -> { /* ping/pong 등은 라이브러리가 자동 처리 */ }
                         }

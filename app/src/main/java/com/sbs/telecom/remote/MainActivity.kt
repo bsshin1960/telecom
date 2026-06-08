@@ -1,9 +1,15 @@
 package com.sbs.telecom.remote
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.sbs.telecom.remote.databinding.ActivityMainBinding
 
@@ -29,15 +35,76 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnConnect.setOnClickListener {
-            val ip = binding.edtIpAddress.text.toString().trim()
-            if (ip.isEmpty()) {
-                Toast.makeText(this, "IP 주소를 입력해 주세요.", Toast.LENGTH_SHORT).show()
+            val code = binding.edtIpAddress.text.toString().trim()
+            if (code.length != 6 || !code.all { it.isDigit() }) {
+                Toast.makeText(this, "올바른 6자리 연결 ID를 입력해 주세요.", Toast.LENGTH_SHORT).show()
             } else {
                 val intent = Intent(this, ClientActivity::class.java).apply {
-                    putExtra("EXTRA_HOST_IP", ip)
+                    putExtra("EXTRA_HOST_IP", code)
                 }
                 startActivity(intent)
             }
         }
+
+        // 릴레이 서버 설정 버튼 동적 추가
+        setupSettingsButton()
+    }
+
+    private fun setupSettingsButton() {
+        val prefs = getSharedPreferences(RemoteControlService.PREF_NAME, Context.MODE_PRIVATE)
+        val currentHost = prefs.getString(RemoteControlService.PREF_KEY_RELAY_HOST, RemoteControlService.DEFAULT_RELAY_HOST) ?: RemoteControlService.DEFAULT_RELAY_HOST
+
+        val btnRelaySettings = Button(this).apply {
+            text = "⚙ 릴레이 서버 IP: $currentHost"
+            textSize = 12f
+            setBackgroundColor(0xFF1E1E2E.toInt())
+            setTextColor(0xFF94A3B8.toInt())
+            setOnClickListener { showRelaySettingsDialog() }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dpToPx(16)
+                bottomMargin = dpToPx(16)
+            }
+        }
+
+        // Copyright 텍스트 바로 위에 추가
+        val rootLinear = binding.root as LinearLayout
+        rootLinear.addView(btnRelaySettings, rootLinear.childCount - 1)
+    }
+
+    private fun showRelaySettingsDialog() {
+        val prefs = getSharedPreferences(RemoteControlService.PREF_NAME, Context.MODE_PRIVATE)
+        val currentHost = prefs.getString(RemoteControlService.PREF_KEY_RELAY_HOST, RemoteControlService.DEFAULT_RELAY_HOST) ?: RemoteControlService.DEFAULT_RELAY_HOST
+
+        val editText = EditText(this).apply {
+            setText(currentHost)
+            hint = "예: 54.123.45.67 또는 127.0.0.1"
+            setTextColor(0xFFFFFFFF.toInt())
+            setHintTextColor(0xFF666666.toInt())
+            setPadding(dpToPx(12), dpToPx(12), dpToPx(12), dpToPx(12))
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("🔧 릴레이 서버 IP 설정")
+            .setMessage("AWS EC2 공인 IP 또는 로컬 테스트용 PC IP를 입력하세요.")
+            .setView(editText)
+            .setPositiveButton("저장") { _, _ ->
+                val newHost = editText.text.toString().trim()
+                if (newHost.isNotEmpty()) {
+                    prefs.edit().putString(RemoteControlService.PREF_KEY_RELAY_HOST, newHost).apply()
+                    Toast.makeText(this, "릴레이 서버 IP가 \"$newHost\"로 저장되었습니다.", Toast.LENGTH_SHORT).show()
+                    recreate()
+                } else {
+                    Toast.makeText(this, "IP 주소를 입력해 주세요.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("취소") { dialog, _ -> dialog.dismiss() }
+            .show()
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).toInt()
     }
 }

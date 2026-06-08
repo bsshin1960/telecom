@@ -16,6 +16,7 @@ import android.provider.Settings
 import android.text.TextUtils
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -30,6 +31,20 @@ import java.util.Collections
 class HostActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityHostBinding
+
+    private val uiUpdateHandler = Handler(android.os.Looper.getMainLooper())
+    private val uiUpdateRunnable = object : Runnable {
+        override fun run() {
+            if (isServiceRunning(RemoteControlService::class.java)) {
+                updateSessionIdText(RemoteControlService.currentSessionId)
+                updateServerStatus()
+            } else {
+                binding.txtIpAddress.text = "------"
+                updateServerStatus()
+            }
+            uiUpdateHandler.postDelayed(this, 500)
+        }
+    }
 
     private val screenCaptureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -57,12 +72,36 @@ class HostActivity : AppCompatActivity() {
         }
     }
 
+    private val sessionIdReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val sessionId = intent?.getStringExtra("session_id")
+            if (sessionId == "ERROR") {
+                // 릴레이 서버 연결 실패
+                binding.txtIpAddress.text = "연결 실패"
+                binding.txtIpAddress.setTextColor(0xFFFF5252.toInt())
+                Toast.makeText(context, "릴레이 서버에 연결할 수 없습니다.\n"
+                    + "⚙ 서버 설정에서 IP를 확인하세요.", Toast.LENGTH_LONG).show()
+            } else if (sessionId != null) {
+                binding.txtIpAddress.setTextColor(0xFF03DAC6.toInt())
+                updateSessionIdText(sessionId)
+            }
+        }
+    }
+
+    private fun updateSessionIdText(sessionId: String?) {
+        if (sessionId != null && sessionId.length == 6) {
+            binding.txtIpAddress.text = "${sessionId.substring(0, 3)} ${sessionId.substring(3)}"
+        } else {
+            binding.txtIpAddress.text = sessionId ?: "------"
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityHostBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.txtIpAddress.text = getLocalIpAddress()
+        binding.txtIpAddress.text = "------"
 
         binding.btnAccessibilitySetting.setOnClickListener {
             handleAccessibilitySetup()
@@ -79,11 +118,77 @@ class HostActivity : AppCompatActivity() {
                 }
             }
         }
+
+        // 릴레이 서버 IP 설정 버튼 추가 (리소스로 만듦 대신 코드로 동적 생성)
+        val prefs = getSharedPreferences(RemoteControlService.PREF_NAME, Context.MODE_PRIVATE)
+        val currentHost = prefs.getString(RemoteControlService.PREF_KEY_RELAY_HOST, RemoteControlService.DEFAULT_RELAY_HOST) ?: RemoteControlService.DEFAULT_RELAY_HOST
+
+        // 서버 상태 카드 아래에 설정 버튼 추가
+        val btnRelaySettings = Button(this).apply {
+            text = "⚙ 릴레이 서버 IP: $currentHost"
+            textSize = 12f
+            setBackgroundColor(0xFF1E1E2E.toInt())
+            setTextColor(0xFF94A3B8.toInt())
+            setOnClickListener { showRelaySettingsDialog(this) }
+        }
+
+        // 레이아웃에 알리스로 자동 마지막 위치에 추가
+        (binding.root.getChildAt(0) as? android.widget.LinearLayout)?.let { rootLinear ->
+            rootLinear.addView(btnRelaySettings, rootLinear.childCount - 1)
+        }
+
+    }
+
+    /**
+     * 릴레이 서버 IP를 SharedPreferences에 저장하는 설정 다이얼로그.
+     */
+    private fun showRelaySettingsDialog(btnSettings: Button) {
+        val prefs = getSharedPreferences(RemoteControlService.PREF_NAME, Context.MODE_PRIVATE)
+        val currentHost = prefs.getString(RemoteControlService.PREF_KEY_RELAY_HOST, RemoteControlService.DEFAULT_RELAY_HOST) ?: RemoteControlService.DEFAULT_RELAY_HOST
+
+        val editText = EditText(this).apply {
+            setText(currentHost)
+            hint = "예: 54.123.45.67 또는 127.0.0.1"
+            setTextColor(0xFFFFFFFF.toInt())
+            setHintTextColor(0xFF666666.toInt())
+            setPadding(dpToPx(12), dpToPx(12), dpToPx(12), dpToPx(12))
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("🔧 릴레이 서버 IP 설정")
+            .setMessage("AWS EC2 공인 IP 또는 로컬 테스트용 PC IP를 입력하세요.")
+            .setView(editText)
+            .setPositiveButton("저장") { _, _ ->
+                val newHost = editText.text.toString().trim()
+                if (newHost.isNotEmpty()) {
+                    prefs.edit().putString(RemoteControlService.PREF_KEY_RELAY_HOST, newHost).apply()
+                    btnSettings.text = "⚙ 릴레이 서버 IP: $newHost"
+                    Toast.makeText(this, "릴레이 서버 IP가 \"$newHost\"로 저장되었습니다.\n다음 서버 시작 시에 적용됩니다.", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, "IP 주소를 입력해 주세요.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("취소") { dialog, _ -> dialog.dismiss() }
+            .show()
     }
 
     override fun onResume() {
         super.onResume()
-        binding.txtIpAddress.text = getLocalIpAddress()
+        
+        uiUpdateHandler.post(uiUpdateRunnable)
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(sessionIdReceiver, android.content.IntentFilter("com.sbs.telecom.remote.SESSION_ID_RECEIVED"), RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(sessionIdReceiver, android.content.IntentFilter("com.sbs.telecom.remote.SESSION_ID_RECEIVED"))
+        }
+
+        if (isServiceRunning(RemoteControlService::class.java)) {
+            updateSessionIdText(RemoteControlService.currentSessionId)
+        } else {
+            binding.txtIpAddress.text = "------"
+        }
 
         // WRITE_SECURE_SETTINGS 권한이 있으면 접근성 서비스를 자동 활성화 시도
         if (hasWriteSecureSettingsPermission()) {
@@ -92,6 +197,16 @@ class HostActivity : AppCompatActivity() {
 
         checkAccessibilityStatus()
         updateServerStatus()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        uiUpdateHandler.removeCallbacks(uiUpdateRunnable)
+        try {
+            unregisterReceiver(sessionIdReceiver)
+        } catch (e: Exception) {
+            // ignore
+        }
     }
 
     // ──────────────────────────────────────────────
@@ -486,7 +601,7 @@ class HostActivity : AppCompatActivity() {
     private fun updateServerStatus() {
         val running = isServiceRunning(RemoteControlService::class.java)
         if (running) {
-            binding.txtServerStatus.text = "상태: 서비스 실행 중 (포트: 8080)"
+            binding.txtServerStatus.text = "상태: 서비스 실행 중"
             binding.txtServerStatus.setTextColor(getColor(android.R.color.holo_green_light))
             binding.btnToggleServer.text = "원격 도움 중단"
             binding.btnToggleServer.backgroundTintList =
@@ -497,6 +612,7 @@ class HostActivity : AppCompatActivity() {
             binding.btnToggleServer.text = "원격 도움 요청"
             binding.btnToggleServer.backgroundTintList =
                 android.content.res.ColorStateList.valueOf(0xFF6200EE.toInt())
+            binding.txtIpAddress.text = "------"
         }
     }
 
@@ -514,7 +630,15 @@ class HostActivity : AppCompatActivity() {
             }
         }
         val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+        // Android 14(API 34)부터 전체 화면 공유를 기본값으로 설정 가능
+        val captureIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            mediaProjectionManager.createScreenCaptureIntent(
+                android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()
+            )
+        } else {
+            mediaProjectionManager.createScreenCaptureIntent()
+        }
+        screenCaptureLauncher.launch(captureIntent)
     }
 
     private fun stopRemoteControlService() {
