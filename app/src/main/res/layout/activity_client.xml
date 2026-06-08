@@ -40,13 +40,58 @@
             android:insetBottom="0dp"/>
     </LinearLayout>
 
+    <!-- Bottom Navigation Bar (Back / Home / Recent) -->
+    <LinearLayout
+        android:id="@+id/navBar"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_alignParentBottom="true"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:background="#1A1A1A"
+        android:elevation="4dp">
+
+        <ImageButton
+            android:id="@+id/btnNavBack"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:src="@android:drawable/ic_media_previous"
+            android:background="?android:attr/selectableItemBackground"
+            android:contentDescription="뒤로가기"
+            android:scaleType="centerInside"
+            android:tint="#AAAAAA" />
+
+        <ImageButton
+            android:id="@+id/btnNavHome"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:src="@android:drawable/ic_menu_myplaces"
+            android:background="?android:attr/selectableItemBackground"
+            android:contentDescription="홈"
+            android:scaleType="centerInside"
+            android:tint="#AAAAAA" />
+
+        <ImageButton
+            android:id="@+id/btnNavRecent"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:src="@android:drawable/ic_menu_recent_history"
+            android:background="?android:attr/selectableItemBackground"
+            android:contentDescription="최근 앱"
+            android:scaleType="centerInside"
+            android:tint="#AAAAAA" />
+    </LinearLayout>
+
     <!-- Custom Display View for Host Screen -->
     <com.sbs.telecom.remote.RemoteDisplayView
         android:id="@+id/remoteDisplayView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_below="@id/connectionPanel"
-        android:layout_centerInParent="true"
+        android:layout_above="@id/navBar"
         android:background="#000000" />
 
 </RelativeLayout>

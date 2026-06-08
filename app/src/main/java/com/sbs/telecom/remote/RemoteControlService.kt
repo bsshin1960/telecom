@@ -441,6 +441,9 @@ class RemoteControlService : Service() {
                                             send(Frame.Binary(true, frameData))
                                             Log.d(TAG, "Sent initial frame on CLIENT_READY to $remoteAddr")
                                         }
+                                    } else if (text.startsWith("NAV_")) {
+                                        // 클라이언트의 가상 네비게이션 버튼 명령 처리
+                                        handleNavCommand(text)
                                     } else {
                                         parseAndInjectTouch(text)
                                     }
@@ -502,6 +505,33 @@ class RemoteControlService : Service() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "parseAndInjectTouch error: ${e.message}")
+        }
+    }
+
+    /**
+     * 클라이언트의 가상 네비게이션 버튼 명령을 처리합니다.
+     * AccessibilityService의 Global Action을 통해 홈/뒤로/최근앱을 실행합니다.
+     */
+    private fun handleNavCommand(command: String) {
+        val service = RemoteAccessibilityService.instance
+        if (service != null) {
+            when (command) {
+                "NAV_BACK" -> {
+                    service.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+                    Log.d(TAG, "handleNavCommand: BACK performed")
+                }
+                "NAV_HOME" -> {
+                    service.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
+                    Log.d(TAG, "handleNavCommand: HOME performed")
+                }
+                "NAV_RECENT" -> {
+                    service.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS)
+                    Log.d(TAG, "handleNavCommand: RECENTS performed")
+                }
+                else -> Log.w(TAG, "handleNavCommand: unknown command '$command'")
+            }
+        } else {
+            Log.w(TAG, "handleNavCommand: AccessibilityService not available")
         }
     }
 

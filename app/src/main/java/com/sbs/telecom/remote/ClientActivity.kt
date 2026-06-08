@@ -1,5 +1,6 @@
 package com.sbs.telecom.remote
 
+import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.AudioFormat
@@ -86,6 +87,17 @@ class ClientActivity : AppCompatActivity() {
             }
         }
 
+        // 가상 네비게이션 버튼 설정 — Host 기기에 홈/뒤로/최근앱 명령을 전송
+        binding.btnNavBack.setOnClickListener {
+            touchChannel.trySend("NAV_BACK")
+        }
+        binding.btnNavHome.setOnClickListener {
+            touchChannel.trySend("NAV_HOME")
+        }
+        binding.btnNavRecent.setOnClickListener {
+            touchChannel.trySend("NAV_RECENT")
+        }
+
         // 자동 연결 및 전체 화면(몰입 모드) 처리
         val ip = intent.getStringExtra("EXTRA_HOST_IP")
         if (ip != null) {
@@ -111,6 +123,18 @@ class ClientActivity : AppCompatActivity() {
 
             connectToHost(ip)
         }
+    }
+
+    /**
+     * configChanges로 Activity 파괴를 방지하므로, 기기 회전 시 이 콜백이 호출됩니다.
+     * RemoteDisplayView를 강제로 재측정/재그리기하여 가로/세로 전환 시 화면이 멈추지 않도록 합니다.
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        Log.d(TAG, "onConfigurationChanged: orientation=${newConfig.orientation}")
+        // 뷰 크기가 변경되었으므로 재측정 및 재그리기를 강제합니다.
+        binding.remoteDisplayView.requestLayout()
+        binding.remoteDisplayView.invalidate()
     }
 
     private fun connectToHost(ip: String) {
@@ -167,16 +191,6 @@ class ClientActivity : AppCompatActivity() {
                                         if (bitmap != null) {
                                             withContext(Dispatchers.Main) {
                                                 binding.remoteDisplayView.updateFrame(bitmap)
-
-                                                // 상대방 화면 종횡비에 맞게 내 화면 방향을 자동 전환 (사용자 경험 개선)
-                                                val isBmpLandscape = bitmap.width > bitmap.height
-                                                val currentOrientation = resources.configuration.orientation
-                                                
-                                                if (isBmpLandscape && currentOrientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
-                                                    requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                                } else if (!isBmpLandscape && currentOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
-                                                    requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                                                }
                                             }
                                         } else {
                                             Log.w(TAG, "Failed to decode video frame (${bytes.size} bytes)")
