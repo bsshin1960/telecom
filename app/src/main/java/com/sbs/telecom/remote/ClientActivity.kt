@@ -6,7 +6,10 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.view.MotionEvent
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.sbs.telecom.remote.databinding.ActivityClientBinding
@@ -69,6 +72,9 @@ class ClientActivity : AppCompatActivity() {
         binding = ActivityClientBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // 내비게이션 바 초기 숨김 설정
+        binding.navBar.visibility = android.view.View.GONE
+
         binding.btnConnect.setOnClickListener {
             if (connectionJob?.isActive == true) {
                 disconnect()
@@ -88,6 +94,30 @@ class ClientActivity : AppCompatActivity() {
                 // Channel에 넣으면 별도 코루틴이 순서대로 전송합니다.
                 touchChannel.trySend("action=$action,x=$xRatio,y=$yRatio")
             }
+        }
+
+        // 스와이프 업 제스처 감지하여 내비게이션 바 보이기 설정
+        var touchStartX = 0f
+        var touchStartY = 0f
+        binding.remoteDisplayView.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    touchStartX = event.x
+                    touchStartY = event.y
+                }
+                MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP -> {
+                    val deltaY = touchStartY - event.y
+                    val deltaX = Math.abs(event.x - touchStartX)
+                    val viewHeight = v.height
+                    
+                    // 터치 시작 지점이 화면 하단 20% 이내이고, 위 방향으로 80픽셀 이상 드래그되었을 때
+                    if (touchStartY > viewHeight * 0.8f && deltaY > 80f && deltaX < 150f) {
+                        showNavBarTemporarily()
+                    }
+                }
+            }
+            // false를 반환하여 remoteDisplayView의 onTouchEvent(원격 터치)도 그대로 수행되도록 함
+            false
         }
 
         // 가상 네비게이션 버튼 설정 — Host 기기에 홈/뒤로/최근앱 명령을 전송
@@ -176,6 +206,7 @@ class ClientActivity : AppCompatActivity() {
                         binding.btnConnect.text = "연결 끊기"
                         binding.btnConnect.isEnabled = true
                         Toast.makeText(this@ClientActivity, "서버에 연결되었습니다.", Toast.LENGTH_SHORT).show()
+                        showNavBarTemporarily() // 연결 완료 시 내비게이션 바 3초간 노출 안내
                     }
 
                     // 오디오 수신 재생 준비
@@ -310,6 +341,17 @@ class ClientActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Error releasing AudioTrack: ${e.message}")
         }
+    }
+
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private val hideNavBarRunnable = Runnable {
+        binding.navBar.visibility = android.view.View.GONE
+    }
+
+    private fun showNavBarTemporarily() {
+        uiHandler.removeCallbacks(hideNavBarRunnable)
+        binding.navBar.visibility = android.view.View.VISIBLE
+        uiHandler.postDelayed(hideNavBarRunnable, 3000) // 3초 후 자동 숨김
     }
 
     override fun onDestroy() {

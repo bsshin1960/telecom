@@ -40,6 +40,14 @@
             android:insetBottom="0dp"/>
     </LinearLayout>
 
+    <!-- Custom Display View for Host Screen -->
+    <com.sbs.telecom.remote.RemoteDisplayView
+        android:id="@+id/remoteDisplayView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/connectionPanel"
+        android:background="#000000" />
+
     <!-- Bottom Navigation Bar (Back / Home / Recent) -->
     <LinearLayout
         android:id="@+id/navBar"
@@ -48,7 +56,7 @@
         android:layout_alignParentBottom="true"
         android:orientation="horizontal"
         android:gravity="center"
-        android:background="#1A1A1A"
+        android:background="#991A1A1A"
         android:elevation="4dp">
 
         <ImageButton
@@ -84,14 +92,5 @@
             android:scaleType="centerInside"
             android:tint="#AAAAAA" />
     </LinearLayout>
-
-    <!-- Custom Display View for Host Screen -->
-    <com.sbs.telecom.remote.RemoteDisplayView
-        android:id="@+id/remoteDisplayView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_below="@id/connectionPanel"
-        android:layout_above="@id/navBar"
-        android:background="#000000" />
 
 </RelativeLayout>

@@ -441,6 +441,8 @@ class RemoteControlService : Service() {
                                             send(Frame.Binary(true, frameData))
                                             Log.d(TAG, "Sent initial frame on CLIENT_READY to $remoteAddr")
                                         }
+                                        // 정지 화면에서도 즉각적인 화면 전송을 위해 강제 캡처 트리거
+                                        triggerImmediateCapture()
                                     } else if (text.startsWith("NAV_")) {
                                         // 클라이언트의 가상 네비게이션 버튼 명령 처리
                                         handleNavCommand(text)
@@ -614,6 +616,24 @@ class RemoteControlService : Service() {
             }
         } catch (e: java.lang.Exception) {
             Log.e(TAG, "Error in recreateVirtualDisplay: ${e.message}", e)
+        }
+    }
+
+    private fun triggerImmediateCapture() {
+        backgroundHandler?.post {
+            try {
+                val vd = virtualDisplay
+                val ir = imageReader
+                if (vd != null && ir != null) {
+                    Log.d(TAG, "triggerImmediateCapture: forcing redraw by resetting surface")
+                    vd.setSurface(null)
+                    vd.setSurface(ir.surface)
+                } else {
+                    Log.w(TAG, "triggerImmediateCapture: virtualDisplay or imageReader is null")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to trigger immediate capture: ${e.message}")
+            }
         }
     }
 
