@@ -56,7 +56,7 @@ class RemoteControlService : Service() {
         // RELAY_HOST는 SharedPreferences에서 동적으로 읽습니다. getRelayHost()를 사용하세요.
         const val PREF_NAME = "TeleControlPrefs"
         const val PREF_KEY_RELAY_HOST = "relay_host"
-        const val DEFAULT_RELAY_HOST = "127.0.0.1" // 로컬 테스트용 기본값
+        const val DEFAULT_RELAY_HOST = "54.242.81.228" // 로컬 테스트용 기본값
 
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "RemoteControlChannel"
