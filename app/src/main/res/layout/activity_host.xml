@@ -26,8 +26,8 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="#1E1E1E"
-            android:padding="16dp"
-            android:layout_marginBottom="20dp">
+            android:padding="12dp"
+            android:layout_marginBottom="10dp">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -53,8 +53,8 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="#1E1E1E"
-            android:padding="16dp"
-            android:layout_marginBottom="20dp">
+            android:padding="12dp"
+            android:layout_marginBottom="10dp">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -77,7 +77,7 @@
             <Button
                 android:id="@+id/btnAccessibilitySetting"
                 android:layout_width="match_parent"
-                android:layout_height="60dp"
+                android:layout_height="48dp"
                 android:text="권한 설정"
                 android:textSize="16sp"
                 android:textStyle="bold"
@@ -93,8 +93,8 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="#1E1E1E"
-            android:padding="16dp"
-            android:layout_marginBottom="20dp">
+            android:padding="12dp"
+            android:layout_marginBottom="10dp">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -127,7 +127,7 @@
             <Button
                 android:id="@+id/btnToggleServer"
                 android:layout_width="match_parent"
-                android:layout_height="60dp"
+                android:layout_height="48dp"
                 android:text="도움 요청"
                 android:textSize="16sp"
                 android:textStyle="bold"
