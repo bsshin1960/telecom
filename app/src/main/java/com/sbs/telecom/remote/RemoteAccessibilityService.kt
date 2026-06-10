@@ -70,13 +70,40 @@ class RemoteAccessibilityService : AccessibilityService() {
                         while (clickableNode != null && !clickableNode.isClickable) {
                             clickableNode = clickableNode.parent
                         }
-                        if (clickableNode != null && clickableNode.isClickable && clickableNode.isEnabled) {
-                            Log.d(TAG, "Auto-clicking system permission button: ${clickableNode.text}")
-                            clickableNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        if (clickableNode != null && clickableNode.isEnabled) {
+                            // 시스템 보안 다이얼로그의 경우 performAction(ACTION_CLICK)은 보안 정책(Tapjacking 방지)으로 무시됩니다.
+                            // 따라서 실제 버튼 노드의 좌표를 구하여 물리적 터치 제스처를 시뮬레이션해서 주입합니다.
+                            val rect = android.graphics.Rect()
+                            clickableNode.getBoundsInScreen(rect)
+                            val clickX = rect.centerX().toFloat()
+                            val clickY = rect.centerY().toFloat()
+
+                            Log.d(TAG, "Simulating physical tap at ($clickX, $clickY) for: ${clickableNode.text}")
+
+                            val path = Path().apply {
+                                moveTo(clickX, clickY)
+                                lineTo(clickX + 1f, clickY + 1f)
+                            }
+                            val stroke = GestureDescription.StrokeDescription(path, 0, 50)
+                            val gestureDesc = GestureDescription.Builder().addStroke(stroke).build()
+
+                            dispatchGesture(gestureDesc, null, null)
+                            recycleNodes(nodes)
                             return
                         }
                     }
+                    recycleNodes(nodes)
                 }
+            }
+        }
+    }
+
+    private fun recycleNodes(nodes: List<AccessibilityNodeInfo>?) {
+        if (nodes != null) {
+            for (node in nodes) {
+                try {
+                    node.recycle()
+                } catch (_: Exception) {}
             }
         }
     }
