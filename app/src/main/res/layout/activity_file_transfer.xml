@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#121212"
+    android:padding="16dp">
+
+    <!-- Top Status & Refresh Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="12dp">
+
+        <TextView
+            android:id="@+id/txtStatus"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="파일 전송 대기 중..."
+            android:textColor="#A855F7"
+            android:textSize="14sp"
+            android:textStyle="bold"/>
+
+        <Button
+            android:id="@+id/btnRefresh"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:text="🔄 새로고침"
+            android:textSize="12sp"
+            android:backgroundTint="#1E1E2F"
+            android:textColor="#FFFFFF"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"/>
+    </LinearLayout>
+
+    <!-- Content Area containing two panes -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <!-- Upper Pane: 도움 받기 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:background="#1E1E1E"
+            android:padding="8dp"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:id="@+id/txtLeftTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="도움 받기"
+                android:textColor="#818CF8"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="4dp"/>
+
+            <ListView
+                android:id="@+id/listHelpReceive"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:divider="#2D2D2D"
+                android:dividerHeight="1dp"
+                android:choiceMode="singleChoice"
+                android:background="#121212"/>
+
+            <Button
+                android:id="@+id/btnSendToHelpGive"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:text="아래로 전송 (도움 주기로) ⬇"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:backgroundTint="#6200EE"
+                android:textColor="#FFFFFF"
+                android:layout_marginTop="4dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"/>
+        </LinearLayout>
+
+        <!-- Lower Pane: 도움 주기 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:background="#1E1E1E"
+            android:padding="8dp">
+
+            <TextView
+                android:id="@+id/txtRightTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="도움 주기"
+                android:textColor="#34D399"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="4dp"/>
+
+            <ListView
+                android:id="@+id/listHelpGive"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:divider="#2D2D2D"
+                android:dividerHeight="1dp"
+                android:choiceMode="singleChoice"
+                android:background="#121212"/>
+
+            <Button
+                android:id="@+id/btnSendToHelpReceive"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:text="위로 전송 (도움 받기로) ⬆"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:backgroundTint="#6200EE"
+                android:textColor="#FFFFFF"
+                android:layout_marginTop="4dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Bottom Progress Bar -->
+    <ProgressBar
+        android:id="@+id/progressBar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="8dp"
+        android:layout_marginTop="8dp"
+        android:visibility="gone"
+        android:indeterminate="true"/>
+
+</LinearLayout>

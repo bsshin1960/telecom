@@ -1,5 +1,6 @@
 package com.sbs.telecom.remote
 
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
@@ -144,6 +145,13 @@ class ClientActivity : AppCompatActivity() {
             touchChannel.trySend("NAV_RECENT")
         }
 
+        binding.btnFileTransfer.setOnClickListener {
+            val intent = Intent(this, FileTransferActivity::class.java).apply {
+                putExtra("is_client", true) // Client mode
+            }
+            startActivity(intent)
+        }
+
         // 자동 연결 및 전체 화면(몰입 모드) 처리
         val ip = intent.getStringExtra("EXTRA_HOST_IP")
         if (ip != null) {
@@ -184,6 +192,7 @@ class ClientActivity : AppCompatActivity() {
                 Log.d(TAG, "Connecting to ws://$relayHost:$relayPort/join/$ip")
                 client.ws(host = relayHost, port = relayPort, path = "/join/$ip") {
                     webSocketSession = this
+                    FileTransferSession.activeSession = this
                     Log.d(TAG, "WebSocket connected successfully")
 
                     // 터치 이벤트 직렬 전송 코루틴 시작 — Channel에서 순서대로 하나씩 꺼내 전송
@@ -205,6 +214,7 @@ class ClientActivity : AppCompatActivity() {
                     withContext(Dispatchers.Main) {
                         binding.btnConnect.text = "연결 끊기"
                         binding.btnConnect.isEnabled = true
+                        binding.btnFileTransfer.visibility = android.view.View.VISIBLE
                         Toast.makeText(this@ClientActivity, "릴레이 서버 접속 완료.", Toast.LENGTH_SHORT).show()
                         showNavBarTemporarily() // 연결 완료 시 내비게이션 바 3초간 노출 안내
                         setImmersiveMode(true)
@@ -252,7 +262,9 @@ class ClientActivity : AppCompatActivity() {
                             is Frame.Text -> {
                                 val text = frame.readText()
                                 Log.d(TAG, "Received text frame: $text")
-                                if (text.startsWith("ERROR:")) {
+                                if (text.startsWith("FS_")) {
+                                    handleFileCommand(text)
+                                } else if (text.startsWith("ERROR:")) {
                                     withContext(Dispatchers.Main) {
                                         val errMsg = when (text) {
                                             "ERROR: ID_NOT_FOUND" -> "오류: 연결 ID를 찾을 수 없습니다."
@@ -284,8 +296,9 @@ class ClientActivity : AppCompatActivity() {
                     Toast.makeText(this@ClientActivity, "연결 실패: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             } finally {
-                webSocketSession = null
-                touchSenderJob?.cancel()
+                                webSocketSession = null
+                                FileTransferSession.activeSession = null
+                                touchSenderJob?.cancel()
                 touchSenderJob = null
                 releaseAudioTrack()
                 try {
@@ -306,6 +319,7 @@ class ClientActivity : AppCompatActivity() {
         connectionJob?.cancel()
         connectionJob = null
         webSocketSession = null
+        FileTransferSession.activeSession = null
         resetConnectionState()
         Toast.makeText(this, "연결이 해제되었습니다.", Toast.LENGTH_SHORT).show()
         if (isFullScreenMode) {
@@ -316,8 +330,20 @@ class ClientActivity : AppCompatActivity() {
     private fun resetConnectionState() {
         binding.btnConnect.text = "연결"
         binding.btnConnect.isEnabled = true
+        binding.btnFileTransfer.visibility = android.view.View.GONE
         binding.navBar.visibility = android.view.View.GONE
         setImmersiveMode(false)
+    }
+
+    private fun handleFileCommand(command: String) {
+        if (command == "FS_OPEN_UI") {
+            val intent = Intent(this, FileTransferActivity::class.java).apply {
+                putExtra("is_client", true)
+            }
+            startActivity(intent)
+        } else {
+            FileTransferSession.activeListener?.onMessageReceived(command)
+        }
     }
 
     private fun initAudioTrack() {

@@ -34,6 +34,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        binding.btnFileTransfer.setOnClickListener {
+            if (FileTransferSession.activeSession != null) {
+                val isHostMode = isServiceRunning(RemoteControlService::class.java)
+                val intent = Intent(this, FileTransferActivity::class.java).apply {
+                    putExtra("is_client", !isHostMode)
+                }
+                startActivity(intent)
+            } else {
+                Toast.makeText(this, "원격 연결이 수립된 후에 파일 전송 기능을 사용할 수 있습니다.", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         binding.btnConnect.setOnClickListener {
             val code = binding.edtIpAddress.text.toString().trim()
             if (code.length != 6 || !code.all { it.isDigit() }) {
@@ -48,6 +60,17 @@ class MainActivity : AppCompatActivity() {
 
         // 릴레이 서버 설정 버튼 동적 추가
         setupSettingsButton()
+    }
+
+    private fun isServiceRunning(serviceClass: Class<*>): Boolean {
+        val manager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        @Suppress("DEPRECATION")
+        for (service in manager.getRunningServices(Integer.MAX_VALUE)) {
+            if (serviceClass.name == service.service.className) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun setupSettingsButton() {

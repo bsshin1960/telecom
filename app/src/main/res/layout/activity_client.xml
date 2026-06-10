@@ -39,6 +39,18 @@
             android:layout_marginStart="8dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"/>
+
+        <Button
+            android:id="@+id/btnFileTransfer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="파일 전송"
+            android:backgroundTint="#2563EB"
+            android:textColor="#FFFFFF"
+            android:layout_marginStart="8dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:visibility="gone"/>
     </LinearLayout>
 
     <!-- Custom Display View for Host Screen -->

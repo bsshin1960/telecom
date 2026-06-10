@@ -48,6 +48,12 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
 
+        <!-- File Transfer Activity -->
+        <activity
+            android:name=".FileTransferActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
+
         <!-- Foreground Service for Remote Control (MediaProjection) -->
         <service
             android:name=".RemoteControlService"

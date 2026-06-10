@@ -52,6 +52,19 @@
         android:insetTop="0dp"
         android:insetBottom="0dp"/>
 
+    <Button
+        android:id="@+id/btnFileTransfer"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="파일 전송"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFF"
+        android:backgroundTint="#2563EB"
+        android:layout_marginTop="16dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"/>
+
     <!-- IP Input & Connection Panel -->
     <LinearLayout
         android:id="@+id/layoutIpInput"

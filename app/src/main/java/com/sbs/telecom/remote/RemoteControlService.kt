@@ -444,6 +444,7 @@ class RemoteControlService : Service() {
                 try {
                     client.ws(host = relayHost, port = RELAY_PORT, path = "/register") {
                         webSocketSession = this
+                        FileTransferSession.activeSession = this
                         retryCount = 0 // 연결 성공 시 재시도 카운터 초기화
                         Log.d(TAG, "WebSocket connected to Relay Server")
 
@@ -484,6 +485,8 @@ class RemoteControlService : Service() {
                                         triggerImmediateCapture()
                                     } else if (text.startsWith("NAV_")) {
                                         handleNavCommand(text)
+                                    } else if (text.startsWith("FS_")) {
+                                        handleFileCommand(text)
                                     } else {
                                         parseAndInjectTouch(text)
                                     }
@@ -508,6 +511,7 @@ class RemoteControlService : Service() {
                     }
                 } finally {
                     webSocketSession = null
+                    FileTransferSession.activeSession = null
                     isClientConnected = false
                 }
             }
@@ -593,6 +597,18 @@ class RemoteControlService : Service() {
             }
         } else {
             Log.w(TAG, "handleNavCommand: AccessibilityService not available")
+        }
+    }
+
+    private fun handleFileCommand(command: String) {
+        if (command == "FS_OPEN_UI") {
+            val intent = Intent(this, FileTransferActivity::class.java).apply {
+                putExtra("is_client", false) // Host mode
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+        } else {
+            FileTransferSession.activeListener?.onMessageReceived(command)
         }
     }
 
