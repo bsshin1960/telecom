@@ -1,13 +1,18 @@
 package com.sbs.telecom.remote
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.ListView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.sbs.telecom.remote.databinding.ActivityFileTransferBinding
 import org.json.JSONArray
@@ -55,6 +60,9 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
         
         // Register listener
         FileTransferSession.activeListener = this
+
+        // Android 11+ 전체 파일 접근 권한 확인 및 요청
+        checkStoragePermission()
         
         // 1. 상대방에게 나의 화면 열림 알림 및 나의 초기 경로 전송
         FileTransferSession.sendCommand("FS_OPEN_UI|$localCurrentPath")
@@ -63,6 +71,77 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
         refreshLocalList()
         sendLocalFileList(localCurrentPath)
         requestRemoteList()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 권한 설정에서 돌아온 경우 목록 새로고침
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Environment.isExternalStorageManager()) {
+                refreshLocalList()
+                sendLocalFileList(localCurrentPath)
+            }
+        }
+    }
+
+    private fun checkStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11 이상: MANAGE_EXTERNAL_STORAGE 권한 필요
+            if (!Environment.isExternalStorageManager()) {
+                AlertDialog.Builder(this)
+                    .setTitle("📁 파일 접근 권한 필요")
+                    .setMessage("스마트폰 내부 저장소 전체를 탐색하려면 '모든 파일 접근' 권한이 필요합니다.\n\n설정 화면으로 이동하여 'TeleControl' 앱의 '모든 파일 접근 허용'을 켜주세요.")
+                    .setPositiveButton("설정으로 이동") { _, _ ->
+                        try {
+                            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                data = Uri.parse("package:${packageName}")
+                            }
+                            startActivity(intent)
+                        } catch (e: Exception) {
+                            // 일부 기기에서 직접 URI 방식이 안될 경우 일반 설정 화면으로
+                            val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                            startActivity(intent)
+                        }
+                    }
+                    .setNegativeButton("나중에") { dialog, _ ->
+                        dialog.dismiss()
+                        Toast.makeText(this, "권한이 없으면 일부 폴더가 표시되지 않을 수 있습니다.", Toast.LENGTH_LONG).show()
+                    }
+                    .show()
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            // Android 6~10: READ_EXTERNAL_STORAGE 런타임 권한 요청
+            if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                    arrayOf(
+                        android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                        android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    ),
+                    STORAGE_PERMISSION_REQUEST_CODE
+                )
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == STORAGE_PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                refreshLocalList()
+                sendLocalFileList(localCurrentPath)
+            } else {
+                Toast.makeText(this, "저장소 권한이 거부되었습니다. 일부 폴더가 보이지 않을 수 있습니다.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    companion object {
+        private const val STORAGE_PERMISSION_REQUEST_CODE = 100
     }
 
     private fun setupUI() {
