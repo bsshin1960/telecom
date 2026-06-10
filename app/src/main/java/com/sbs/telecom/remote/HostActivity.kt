@@ -401,6 +401,8 @@ class HostActivity : AppCompatActivity() {
             text = "1단계: 접근성 설정 열기 (차단 팝업 띄우기)"
             setBackgroundColor(0xFF6200EE.toInt())
             setTextColor(0xFFFFFFFF.toInt())
+            gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(24), 0, dpToPx(16), 0)
             setOnClickListener {
                 showAccessibilityDisclosure()
             }
@@ -417,6 +419,8 @@ class HostActivity : AppCompatActivity() {
             text = "2단계: 애플리케이션 정보 열기 (제한 해제)"
             setBackgroundColor(0xFF018786.toInt())
             setTextColor(0xFFFFFFFF.toInt())
+            gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(24), 0, dpToPx(16), 0)
             setOnClickListener {
                 openAppInfo()
             }
@@ -433,6 +437,8 @@ class HostActivity : AppCompatActivity() {
             text = "3단계: 접근성 설정 열기 (최종 활성화)"
             setBackgroundColor(0xFF6200EE.toInt())
             setTextColor(0xFFFFFFFF.toInt())
+            gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(24), 0, dpToPx(16), 0)
             setOnClickListener {
                 showAccessibilityDisclosure()
             }
@@ -449,6 +455,8 @@ class HostActivity : AppCompatActivity() {
             text = "4단계: 파일 권한 설정 (모든 파일 접근)"
             setBackgroundColor(0xFF018786.toInt())
             setTextColor(0xFFFFFFFF.toInt())
+            gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(24), 0, dpToPx(16), 0)
             setOnClickListener {
                 requestStoragePermission()
             }
