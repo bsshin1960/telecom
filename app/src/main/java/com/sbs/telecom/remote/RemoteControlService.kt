@@ -561,6 +561,19 @@ class RemoteControlService : Service() {
      * AccessibilityService의 Global Action을 통해 홈/뒤로/최근앱을 실행합니다.
      */
     private fun handleNavCommand(command: String) {
+        if (command == "NAV_FILE_TRANSFER") {
+            val intent = Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                startActivity(intent)
+                Log.d(TAG, "handleNavCommand: FILE_TRANSFER (Downloads folder) opened")
+            } catch (e: Exception) {
+                Log.e(TAG, "handleNavCommand: Failed to open Downloads folder: ${e.message}")
+            }
+            return
+        }
+
         val service = RemoteAccessibilityService.instance
         if (service != null) {
             when (command) {
