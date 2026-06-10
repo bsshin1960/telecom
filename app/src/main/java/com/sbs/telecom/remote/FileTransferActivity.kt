@@ -29,11 +29,10 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
     private lateinit var localAdapter: ArrayAdapter<String>
     private lateinit var remoteAdapter: ArrayAdapter<String>
     
-    private var downloadsPath: File? = null
-    
-    // 상대 경로 관리 (Downloads 폴더 기준)
-    private var localRelativePath = ""
-    private var remoteRelativePath = ""
+    // 절대경로 기반으로 디스크/스토리지 탐색
+    private var storageRoot = ""
+    private var localCurrentPath = ""
+    private var remoteCurrentPath = "Pending..."
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,17 +40,29 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
         setContentView(binding.root)
 
         isClient = intent.getBooleanExtra("is_client", false)
+        
+        // 안드로이드 기본 스토리지 최상위 설정 (/storage/emulated/0)
+        storageRoot = Environment.getExternalStorageDirectory().absolutePath
+        localCurrentPath = storageRoot
+
+        // 인텐트로 초기 원격(PC) 경로가 전달되었으면 바인딩
+        val initialRemote = intent.getStringExtra("initial_remote_path")
+        if (initialRemote != null && initialRemote.isNotEmpty()) {
+            remoteCurrentPath = initialRemote
+        }
 
         setupUI()
-        setupDirectories()
         
         // Register listener
         FileTransferSession.activeListener = this
         
-        // Notify other side we opened the UI and request initial remote list
-        FileTransferSession.sendCommand("FS_OPEN_UI")
-
-        refreshAll()
+        // 1. 상대방에게 나의 화면 열림 알림 및 나의 초기 경로 전송
+        FileTransferSession.sendCommand("FS_OPEN_UI|$localCurrentPath")
+        
+        // 2. 나의 초기 목록 푸시 및 상대방 목록 즉시 요청 (싱크 이슈 방지)
+        refreshLocalList()
+        sendLocalFileList(localCurrentPath)
+        requestRemoteList()
     }
 
     private fun setupUI() {
@@ -82,12 +93,14 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
         // List item click listeners for directory navigation
         binding.listHelpReceive.setOnItemClickListener { _, _, position, _ ->
             val isLocal = !isClient
-            handleItemClick(position, isLocal, if (isClient) binding.listHelpReceive else binding.listHelpReceive)
+            val listView = binding.listHelpReceive
+            handleItemClick(position, isLocal, listView)
         }
 
         binding.listHelpGive.setOnItemClickListener { _, _, position, _ ->
             val isLocal = isClient
-            handleItemClick(position, isLocal, if (isClient) binding.listHelpGive else binding.listHelpGive)
+            val listView = binding.listHelpGive
+            handleItemClick(position, isLocal, listView)
         }
 
         binding.btnSendToHelpGive.setOnClickListener {
@@ -115,20 +128,8 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
         val localLabel = if (isClient) binding.txtRightPath else binding.txtLeftPath
         val remoteLabel = if (isClient) binding.txtLeftPath else binding.txtRightPath
         
-        localLabel.text = if (localRelativePath.isNotEmpty()) "경로: Downloads/$localRelativePath" else "경로: Downloads"
-        remoteLabel.text = if (remoteRelativePath.isNotEmpty()) "경로: Downloads/$remoteRelativePath" else "경로: Downloads"
-    }
-
-    private fun setupDirectories() {
-        val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        downloadsPath = if (publicDir != null && publicDir.exists()) {
-            publicDir
-        } else {
-            getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-        }
-        if (downloadsPath != null && !downloadsPath!!.exists()) {
-            downloadsPath!!.mkdirs()
-        }
+        localLabel.text = "경로: $localCurrentPath"
+        remoteLabel.text = "경로: $remoteCurrentPath"
     }
 
     private fun refreshAll() {
@@ -138,25 +139,12 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
 
     private fun refreshLocalList() {
         localFiles.clear()
-        val rootPath = downloadsPath ?: return
+        val currentDir = File(localCurrentPath)
         
-        val currentDir = File(rootPath, localRelativePath)
-        // 보안 검증 (상위 디렉토리 탈출 방지)
-        try {
-            if (!currentDir.canonicalPath.startsWith(rootPath.canonicalPath)) {
-                localRelativePath = ""
-                refreshLocalList()
-                return
-            }
-        } catch (e: Exception) {
-            localRelativePath = ""
-            return
-        }
-
         updatePathLabels()
 
-        // 상위 폴더 추가
-        if (localRelativePath.isNotEmpty()) {
+        // 상위 폴더 추가 (기본 내부 스토리지 루트보다 위로 갈 수 있음)
+        if (localCurrentPath != "/") {
             localFiles.add("📁 .. (상위 폴더)")
         }
 
@@ -167,11 +155,15 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
                 val files = mutableListOf<String>()
                 
                 for (file in list) {
-                    if (file.isDirectory) {
-                        dirs.add(file.name)
-                    } else if (file.isFile) {
-                        val sizeKb = file.length() / 1024.0
-                        files.add(file.name + " (" + String.format("%.1f", sizeKb) + " KB)")
+                    try {
+                        if (file.isDirectory) {
+                            dirs.add(file.name)
+                        } else if (file.isFile) {
+                            val sizeKb = file.length() / 1024.0
+                            files.add(file.name + " (" + String.format("%.1f", sizeKb) + " KB)")
+                        }
+                    } catch (e: Exception) {
+                        // 권한 제한 파일 스킵
                     }
                 }
                 
@@ -192,8 +184,9 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
     }
 
     private fun requestRemoteList() {
+        val reqPath = if (remoteCurrentPath != "Pending...") remoteCurrentPath else ""
         binding.txtStatus.text = "원격 기기 파일 목록 요청 중..."
-        FileTransferSession.sendCommand("FS_LIST_REQ|$remoteRelativePath")
+        FileTransferSession.sendCommand("FS_LIST_REQ|$reqPath")
     }
 
     private fun handleItemClick(position: Int, isLocal: Boolean, listView: ListView) {
@@ -210,26 +203,26 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
             
             if (isLocal) {
                 if (folderName == "..") {
-                    val parts = localRelativePath.split("/")
-                    localRelativePath = if (parts.size > 1) {
-                        parts.subList(0, parts.size - 1).joinToString("/")
-                    } else {
-                        ""
-                    }
+                    val parent = File(localCurrentPath).parent
+                    localCurrentPath = parent ?: "/"
                 } else {
-                    localRelativePath = if (localRelativePath.isNotEmpty()) "$localRelativePath/$folderName" else folderName
+                    localCurrentPath = File(localCurrentPath, folderName).absolutePath
                 }
+                // 목록 갱신 및 내 상태를 원격에 즉시 동보
                 refreshLocalList()
+                sendLocalFileList(localCurrentPath)
             } else {
+                if (remoteCurrentPath == "Pending...") return
+                
                 if (folderName == "..") {
-                    val parts = remoteRelativePath.split("/")
-                    remoteRelativePath = if (parts.size > 1) {
+                    val parts = remoteCurrentPath.replace("\\", "/").rstrip("/").split("/")
+                    remoteCurrentPath = if (parts.size > 1) {
                         parts.subList(0, parts.size - 1).joinToString("/")
                     } else {
-                        ""
+                        "/"
                     }
                 } else {
-                    remoteRelativePath = if (remoteRelativePath.isNotEmpty()) "$remoteRelativePath/$folderName" else folderName
+                    remoteCurrentPath = fslashJoin(remoteCurrentPath, folderName)
                 }
                 requestRemoteList()
             }
@@ -237,6 +230,15 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
             listView.clearChoices()
             listView.requestLayout()
         }
+    }
+
+    private fun fslashJoin(p1: String, p2: String): String {
+        val path = "$p1/$p2"
+        return path.replace("//", "/")
+    }
+
+    private fun String.rstrip(char: String): String {
+        return if (this.endsWith(char)) this.substring(0, this.length - char.length) else this
     }
 
     private fun transferLocalToRemote(listView: ListView, fileList: List<String>) {
@@ -253,7 +255,7 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
         }
         
         val filename = itemText.substring(2).substringBefore(" (")
-        val file = File(File(downloadsPath, localRelativePath), filename)
+        val file = File(localCurrentPath, filename)
         if (!file.exists()) {
             Toast.makeText(this, "파일이 존재하지 않습니다.", Toast.LENGTH_SHORT).show()
             return
@@ -272,8 +274,7 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
                 val bytes = file.readBytes()
                 val base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP)
                 
-                // 상대방의 현재 상대 경로 아래에 저장되도록 경로 구성
-                val targetPath = if (remoteRelativePath.isNotEmpty()) "$remoteRelativePath/$filename" else filename
+                val targetPath = fslashJoin(remoteCurrentPath, filename)
                 FileTransferSession.sendCommand("FS_FILE_SEND|$targetPath|$base64Data")
                 
                 withContext(Dispatchers.Main) {
@@ -305,7 +306,7 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
         }
         
         val filename = itemText.substring(2).substringBefore(" (")
-        val srcPath = if (remoteRelativePath.isNotEmpty()) "$remoteRelativePath/$filename" else filename
+        val srcPath = fslashJoin(remoteCurrentPath, filename)
 
         binding.txtStatus.text = "'$filename' 다운로드 요청 중..."
         FileTransferSession.sendCommand("FS_FILE_REQ|$srcPath")
@@ -314,17 +315,23 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
     override fun onMessageReceived(message: String) {
         runOnUiThread {
             when {
+                message.startsWith("FS_OPEN_UI") -> {
+                    val path = message.substringAfter("FS_OPEN_UI|", "Pending...")
+                    if (path != "Pending..." && path.isNotEmpty()) {
+                        remoteCurrentPath = path
+                        refreshAll()
+                    }
+                }
                 message.startsWith("FS_LIST_REQ") -> {
-                    // 원격지에서 경로 목록 요청 시 응답
                     val requestedPath = message.substringAfter("FS_LIST_REQ|", "")
-                    sendLocalFileList(requestedPath)
+                    sendLocalFileList(if (requestedPath.isNotEmpty()) requestedPath else localCurrentPath)
                 }
                 message.startsWith("FS_LIST_RESP|") -> {
                     val parts = message.split("|", limit = 3)
                     if (parts.size >= 3) {
                         val path = parts[1]
                         val jsonStr = parts[2]
-                        remoteRelativePath = path
+                        remoteCurrentPath = path
                         updateRemoteList(jsonStr)
                     }
                 }
@@ -349,32 +356,22 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
     }
 
     private fun sendLocalFileList(requestedPath: String) {
-        val rootPath = downloadsPath ?: return
-        val currentDir = File(rootPath, requestedPath)
-        
-        // 보안 검증 (상위 디렉토리 탈출 방지)
-        try {
-            if (!currentDir.canonicalPath.startsWith(rootPath.canonicalPath)) {
-                return
-            }
-        } catch (e: Exception) {
-            return
-        }
-
+        val currentDir = File(requestedPath)
         val jsonArray = JSONArray()
         try {
             val list = currentDir.listFiles()
             if (list != null) {
-                // 폴더와 파일 분리 정렬
                 val dirs = mutableListOf<File>()
                 val files = mutableListOf<File>()
                 
                 for (file in list) {
-                    if (file.isDirectory) {
-                        dirs.add(file)
-                    } else if (file.isFile) {
-                        files.add(file)
-                    }
+                    try {
+                        if (file.isDirectory) {
+                            dirs.add(file)
+                        } else if (file.isFile) {
+                            files.add(file)
+                        }
+                    } catch (e: Exception) {}
                 }
                 dirs.sortBy { it.name }
                 files.sortBy { it.name }
@@ -406,7 +403,7 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
         remoteFiles.clear()
         
         // 상위 폴더 추가
-        if (remoteRelativePath.isNotEmpty()) {
+        if (remoteCurrentPath != "/") {
             remoteFiles.add("📁 .. (상위 폴더)")
         }
 
@@ -433,17 +430,8 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
     }
 
     private fun sendLocalFile(requestedPath: String) {
-        val rootPath = downloadsPath ?: return
-        val file = File(rootPath, requestedPath)
-        
-        // 보안 검증
-        try {
-            if (!file.canonicalPath.startsWith(rootPath.canonicalPath) || !file.exists()) {
-                return
-            }
-        } catch (e: Exception) {
-            return
-        }
+        val file = File(requestedPath)
+        if (!file.exists()) return
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -457,35 +445,22 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
     }
 
     private fun saveRemoteFile(targetPath: String, base64Data: String) {
-        val rootPath = downloadsPath ?: return
-        val filename = targetPath.substringAfterLast("/")
+        val file = File(targetPath)
         
-        // 보안 경로 구성
-        val file = File(File(rootPath, localRelativePath), filename)
-        try {
-            if (!file.canonicalPath.startsWith(rootPath.canonicalPath)) {
-                Log.e("FileTransferActivity", "Path traversal attack blocked on receive!")
-                return
-            }
-        } catch (e: Exception) {
-            return
-        }
-
-        binding.txtStatus.text = "'$filename' 파일 저장 중..."
+        binding.txtStatus.text = "'${file.name}' 파일 저장 중..."
         binding.progressBar.visibility = View.VISIBLE
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Ensure parent directory exists
                 file.parentFile?.mkdirs()
                 
                 val bytes = Base64.decode(base64Data, Base64.NO_WRAP)
                 file.writeBytes(bytes)
 
                 withContext(Dispatchers.Main) {
-                    binding.txtStatus.text = "'$filename' 다운로드 완료"
+                    binding.txtStatus.text = "'${file.name}' 다운로드 완료"
                     binding.progressBar.visibility = View.GONE
-                    refreshLocalList() // 수신 후 자동 새로고침
+                    refreshLocalList()
                 }
             } catch (e: Exception) {
                 Log.e("FileTransferActivity", "Failed to save remote file: ${e.message}")

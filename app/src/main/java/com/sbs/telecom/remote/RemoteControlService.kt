@@ -601,9 +601,13 @@ class RemoteControlService : Service() {
     }
 
     private fun handleFileCommand(command: String) {
-        if (command == "FS_OPEN_UI") {
+        if (command.startsWith("FS_OPEN_UI")) {
+            val initialPath = command.substringAfter("FS_OPEN_UI|", "")
             val intent = Intent(this, FileTransferActivity::class.java).apply {
                 putExtra("is_client", false) // Host mode
+                if (initialPath.isNotEmpty()) {
+                    putExtra("initial_remote_path", initialPath)
+                }
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(intent)
