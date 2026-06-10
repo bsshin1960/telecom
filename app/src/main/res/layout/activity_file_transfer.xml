@@ -3,10 +3,10 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#121212"
+    android:background="#FFFFFF"
     android:padding="16dp">
 
-    <!-- Top Status & Refresh Header -->
+    <!-- Top Status Header (Refresh button removed) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -20,23 +20,12 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="파일 전송 대기 중..."
-            android:textColor="#A855F7"
+            android:textColor="#7C3AED"
             android:textSize="14sp"
             android:textStyle="bold"/>
-
-        <Button
-            android:id="@+id/btnRefresh"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:text="🔄 새로고침"
-            android:textSize="12sp"
-            android:backgroundTint="#1E1E2F"
-            android:textColor="#FFFFFF"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"/>
     </LinearLayout>
 
-    <!-- Content Area containing two panes -->
+    <!-- Content Area containing two panes (Upper and Lower) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -49,18 +38,27 @@
             android:layout_height="0dp"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:background="#1E1E1E"
-            android:padding="8dp"
-            android:layout_marginBottom="8dp">
+            android:background="#F3F4F6"
+            android:padding="10dp"
+            android:layout_marginBottom="10dp">
 
             <TextView
                 android:id="@+id/txtLeftTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="도움 받기"
-                android:textColor="#818CF8"
-                android:textSize="12sp"
+                android:textColor="#4F46E5"
+                android:textSize="13sp"
                 android:textStyle="bold"
+                android:layout_marginBottom="2dp"/>
+
+            <TextView
+                android:id="@+id/txtLeftPath"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="경로: Downloads"
+                android:textColor="#6B7280"
+                android:textSize="11sp"
                 android:layout_marginBottom="4dp"/>
 
             <ListView
@@ -68,10 +66,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
-                android:divider="#2D2D2D"
+                android:divider="#E5E7EB"
                 android:dividerHeight="1dp"
                 android:choiceMode="singleChoice"
-                android:background="#121212"/>
+                android:background="#FFFFFF"/>
 
             <Button
                 android:id="@+id/btnSendToHelpGive"
@@ -80,9 +78,9 @@
                 android:text="아래로 전송 (도움 주기로) ⬇"
                 android:textSize="12sp"
                 android:textStyle="bold"
-                android:backgroundTint="#6200EE"
+                android:backgroundTint="#4F46E5"
                 android:textColor="#FFFFFF"
-                android:layout_marginTop="4dp"
+                android:layout_marginTop="6dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"/>
         </LinearLayout>
@@ -93,17 +91,26 @@
             android:layout_height="0dp"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:background="#1E1E1E"
-            android:padding="8dp">
+            android:background="#F3F4F6"
+            android:padding="10dp">
 
             <TextView
                 android:id="@+id/txtRightTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="도움 주기"
-                android:textColor="#34D399"
-                android:textSize="12sp"
+                android:textColor="#059669"
+                android:textSize="13sp"
                 android:textStyle="bold"
+                android:layout_marginBottom="2dp"/>
+
+            <TextView
+                android:id="@+id/txtRightPath"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="경로: Downloads"
+                android:textColor="#6B7280"
+                android:textSize="11sp"
                 android:layout_marginBottom="4dp"/>
 
             <ListView
@@ -111,10 +118,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
-                android:divider="#2D2D2D"
+                android:divider="#E5E7EB"
                 android:dividerHeight="1dp"
                 android:choiceMode="singleChoice"
-                android:background="#121212"/>
+                android:background="#FFFFFF"/>
 
             <Button
                 android:id="@+id/btnSendToHelpReceive"
@@ -123,9 +130,9 @@
                 android:text="위로 전송 (도움 받기로) ⬆"
                 android:textSize="12sp"
                 android:textStyle="bold"
-                android:backgroundTint="#6200EE"
+                android:backgroundTint="#4F46E5"
                 android:textColor="#FFFFFF"
-                android:layout_marginTop="4dp"
+                android:layout_marginTop="6dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"/>
         </LinearLayout>
