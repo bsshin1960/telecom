@@ -8,6 +8,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -48,7 +49,36 @@ class RemoteAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // 구글 플레이 정책에 따라 화면 분석을 하지 않으므로 구현을 비워둡니다.
+        if (event == null) return
+
+        // 자동 도움 요청 설정이 켜져 있는지 확인
+        val prefs = getSharedPreferences("TeleControlPrefs", android.content.Context.MODE_PRIVATE)
+        val isAutoStart = prefs.getBoolean("auto_start", true)
+        if (!isAutoStart) return
+
+        val eventType = event.eventType
+        if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || 
+            eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            
+            val rootNode = rootInActiveWindow ?: return
+            val targetTexts = listOf("화면 공유", "지금 시작")
+            for (text in targetTexts) {
+                val nodes = rootNode.findAccessibilityNodeInfosByText(text)
+                if (nodes != null && nodes.isNotEmpty()) {
+                    for (node in nodes) {
+                        var clickableNode = node
+                        while (clickableNode != null && !clickableNode.isClickable) {
+                            clickableNode = clickableNode.parent
+                        }
+                        if (clickableNode != null && clickableNode.isClickable && clickableNode.isEnabled) {
+                            Log.d(TAG, "Auto-clicking system permission button: ${clickableNode.text}")
+                            clickableNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                            return
+                        }
+                    }
+                }
+            }
+        }
     }
 
     override fun onInterrupt() {
