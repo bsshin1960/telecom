@@ -77,7 +77,7 @@
             <Button
                 android:id="@+id/btnAccessibilitySetting"
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
+                android:layout_height="60dp"
                 android:text="권한 설정"
                 android:textSize="16sp"
                 android:textStyle="bold"
@@ -127,7 +127,7 @@
             <Button
                 android:id="@+id/btnToggleServer"
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
+                android:layout_height="60dp"
                 android:text="도움 요청"
                 android:textSize="16sp"
                 android:textStyle="bold"
@@ -135,20 +135,6 @@
                 android:textColor="#FFFFFF"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"/>
-
-            <Button
-                android:id="@+id/btnFileTransfer"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:text="파일 전송"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:backgroundTint="#2563EB"
-                android:textColor="#FFFFFF"
-                android:layout_marginTop="12dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:visibility="gone"/>
         </LinearLayout>
 
         <!-- Spacer to push copyright to the bottom -->

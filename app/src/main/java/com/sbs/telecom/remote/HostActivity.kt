@@ -107,13 +107,6 @@ class HostActivity : AppCompatActivity() {
             handleAccessibilitySetup()
         }
 
-        binding.btnFileTransfer.setOnClickListener {
-            val intent = Intent(this, FileTransferActivity::class.java).apply {
-                putExtra("is_client", false) // Host mode
-            }
-            startActivity(intent)
-        }
-
         binding.btnToggleServer.setOnClickListener {
             if (isServiceRunning(RemoteControlService::class.java)) {
                 stopRemoteControlService()
@@ -632,7 +625,6 @@ class HostActivity : AppCompatActivity() {
             binding.btnToggleServer.text = "도움 중지"
             binding.btnToggleServer.backgroundTintList =
                 android.content.res.ColorStateList.valueOf(getColor(android.R.color.holo_red_dark))
-            binding.btnFileTransfer.visibility = android.view.View.VISIBLE
         } else {
             binding.txtServerStatus.text = "상태: 서비스 정지됨"
             binding.txtServerStatus.setTextColor(getColor(android.R.color.holo_red_light))
@@ -640,7 +632,6 @@ class HostActivity : AppCompatActivity() {
             binding.btnToggleServer.backgroundTintList =
                 android.content.res.ColorStateList.valueOf(0xFF6200EE.toInt())
             binding.txtIpAddress.text = "------"
-            binding.btnFileTransfer.visibility = android.view.View.GONE
         }
     }
 
