@@ -33,7 +33,6 @@ class RemoteAccessibilityService : AccessibilityService() {
     // ACTION_DOWN 후 ACTION_UP이 누락되는 경우를 대비한 타임아웃
     private var gestureTimeoutRunnable: Runnable? = null
     private val GESTURE_TIMEOUT_MS = 3000L // 3초 이내에 ACTION_UP이 없으면 강제 처리
-    private var autoClickRunnable: Runnable? = null
 
     private data class GesturePoint(val x: Float, val y: Float, val time: Long)
 
@@ -50,95 +49,9 @@ class RemoteAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null) return
-
-        val eventType = event.eventType
-        if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || 
-            eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
-            
-            val rootNode = rootInActiveWindow
-            if (rootNode == null) {
-                cancelAutoClick()
-                return
-            }
-
-            val targetTexts = listOf("화면 공유", "지금 시작")
-            var foundConfirmButton = false
-
-            for (text in targetTexts) {
-                val nodes = rootNode.findAccessibilityNodeInfosByText(text)
-                if (nodes != null && nodes.isNotEmpty()) {
-                    for (node in nodes) {
-                        var clickableNode = node
-                        while (clickableNode != null && !clickableNode.isClickable) {
-                            clickableNode = clickableNode.parent
-                        }
-                        if (clickableNode != null && clickableNode.isEnabled) {
-                            foundConfirmButton = true
-                            break
-                        }
-                    }
-                    recycleNodes(nodes)
-                }
-                if (foundConfirmButton) break
-            }
-
-            if (foundConfirmButton) {
-                if (autoClickRunnable == null) {
-                    Log.d(TAG, "Confirm button detected. Scheduling auto-click in 3 seconds.")
-                    autoClickRunnable = Runnable {
-                        val currentRootNode = rootInActiveWindow
-                        if (currentRootNode != null) {
-                            for (text in targetTexts) {
-                                val currentNodes = currentRootNode.findAccessibilityNodeInfosByText(text)
-                                if (currentNodes != null && currentNodes.isNotEmpty()) {
-                                    var clicked = false
-                                    for (node in currentNodes) {
-                                        var clickableNode = node
-                                        while (clickableNode != null && !clickableNode.isClickable) {
-                                            clickableNode = clickableNode.parent
-                                        }
-                                        if (clickableNode != null && clickableNode.isEnabled) {
-                                            val rect = android.graphics.Rect()
-                                            clickableNode.getBoundsInScreen(rect)
-                                            val clickX = rect.centerX().toFloat()
-                                            val clickY = rect.centerY().toFloat()
-
-                                            Log.d(TAG, "Delayed simulating physical tap at ($clickX, $clickY) for: ${clickableNode.text}")
-
-                                            val path = Path().apply {
-                                                moveTo(clickX, clickY)
-                                                lineTo(clickX + 1f, clickY + 1f)
-                                            }
-                                            val stroke = GestureDescription.StrokeDescription(path, 0, 50)
-                                            val gestureDesc = GestureDescription.Builder().addStroke(stroke).build()
-
-                                            dispatchGesture(gestureDesc, null, null)
-                                            clicked = true
-                                            break
-                                        }
-                                    }
-                                    recycleNodes(currentNodes)
-                                    if (clicked) break
-                                }
-                            }
-                        }
-                        autoClickRunnable = null
-                    }
-                    mainHandler.postDelayed(autoClickRunnable!!, 3000)
-                }
-            } else {
-                cancelAutoClick()
-            }
-        }
-    }
-
-    private fun cancelAutoClick() {
-        if (autoClickRunnable != null) {
-            Log.d(TAG, "Confirm button no longer visible. Cancelling scheduled auto-click.")
-            mainHandler.removeCallbacks(autoClickRunnable!!)
-            autoClickRunnable = null
-        }
+        // OS 보안 정책(Tapjacking 방지)에 의해 미디어 프로젝션 권한 확인 다이얼로그("화면 공유"/"지금 시작" 버튼)에 대한
+        // 자동 클릭(performAction 및 dispatchGesture 시뮬레이션 전체)은 시스템 수준에서 전면 차단되므로,
+        // 사용자 정보 보안을 위해 어떠한 가짜 클릭 행위도 발생하지 않도록 코드를 완전히 배제합니다.
     }
 
     private fun recycleNodes(nodes: List<AccessibilityNodeInfo>?) {
