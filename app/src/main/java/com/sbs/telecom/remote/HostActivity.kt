@@ -107,6 +107,10 @@ class HostActivity : AppCompatActivity() {
             handleAccessibilitySetup()
         }
 
+        binding.btnStorageSetting.setOnClickListener {
+            requestStoragePermission()
+        }
+
         binding.btnToggleServer.setOnClickListener {
             if (isServiceRunning(RemoteControlService::class.java)) {
                 stopRemoteControlService()
@@ -218,7 +222,7 @@ class HostActivity : AppCompatActivity() {
         updateServerStatus()
         
         // 원격 파일 전송/탐색을 위한 백그라운드 저장소 권한 체크
-        checkStoragePermission()
+        updateStoragePermissionStatus()
     }
 
     override fun onPause() {
@@ -710,28 +714,40 @@ class HostActivity : AppCompatActivity() {
         return "127.0.0.1"
     }
 
-    private fun checkStoragePermission() {
+    private fun updateStoragePermissionStatus() {
+        val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            android.os.Environment.isExternalStorageManager()
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+
+        binding.txtStorageStatus.text = if (hasPermission) {
+            "상태: 활성화됨 ✓"
+        } else {
+            "상태: 비활성화됨 — 버튼을 눌러 설정하세요"
+        }
+        binding.txtStorageStatus.setTextColor(
+            if (hasPermission) getColor(android.R.color.holo_green_light)
+            else getColor(android.R.color.holo_red_light)
+        )
+    }
+
+    private fun requestStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!android.os.Environment.isExternalStorageManager()) {
-                AlertDialog.Builder(this)
-                    .setTitle("📁 모든 파일 접근 권한 필요")
-                    .setMessage("원격 파일 전송 기능을 백그라운드에서 사용하려면 '모든 파일 접근' 권한이 필요합니다.\n\n설정 화면으로 이동하여 'TeleControl' 앱의 '모든 파일 접근 허용'을 켜주세요.")
-                    .setPositiveButton("설정으로 이동") { _, _ ->
-                        try {
-                            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                                data = Uri.parse("package:${packageName}")
-                            }
-                            startActivity(intent)
-                        } catch (e: Exception) {
-                            val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                            startActivity(intent)
-                        }
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = Uri.parse("package:${packageName}")
                     }
-                    .setNegativeButton("취소") { dialog, _ ->
-                        dialog.dismiss()
-                        Toast.makeText(this, "권한이 없으면 파일 전송 및 탐색이 작동하지 않습니다.", Toast.LENGTH_LONG).show()
-                    }
-                    .show()
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    startActivity(intent)
+                }
+            } else {
+                Toast.makeText(this, "이미 모든 파일 접근 권한이 허용되어 있습니다.", Toast.LENGTH_SHORT).show()
             }
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)
@@ -743,6 +759,8 @@ class HostActivity : AppCompatActivity() {
                     ),
                     102
                 )
+            } else {
+                Toast.makeText(this, "이미 저장소 권한이 허용되어 있습니다.", Toast.LENGTH_SHORT).show()
             }
         }
     }
