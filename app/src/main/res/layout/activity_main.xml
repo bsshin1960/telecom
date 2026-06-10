@@ -52,7 +52,7 @@
         android:insetTop="0dp"
         android:insetBottom="0dp"/>
 
-    <Button
+    <TextView
         android:id="@+id/btnFileTransfer"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -60,10 +60,10 @@
         android:textSize="18sp"
         android:textStyle="bold"
         android:textColor="#94A3B8"
-        android:background="@android:color/transparent"
-        android:backgroundTint="@android:color/transparent"
-        android:elevation="0dp"
-        android:stateListAnimator="@null"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center"
         android:layout_marginTop="16dp"/>
 
     <!-- IP Input & Connection Panel -->

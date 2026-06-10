@@ -357,7 +357,7 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
                 FileTransferSession.sendCommand("FS_FILE_SEND|$targetPath|$base64Data")
                 
                 withContext(Dispatchers.Main) {
-                    binding.txtStatus.text = "'$filename' 전송 완료"
+                    binding.txtStatus.text = "'$filename' 전송 완료 (저장 위치: $targetPath)"
                     binding.progressBar.visibility = View.GONE
                 }
             } catch (e: Exception) {
@@ -403,7 +403,10 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
                 }
                 message.startsWith("FS_LIST_REQ") -> {
                     val requestedPath = message.substringAfter("FS_LIST_REQ|", "")
-                    sendLocalFileList(if (requestedPath.isNotEmpty()) requestedPath else localCurrentPath)
+                    val targetPath = if (requestedPath.isNotEmpty()) requestedPath else localCurrentPath
+                    localCurrentPath = targetPath
+                    sendLocalFileList(targetPath)
+                    refreshLocalList()
                 }
                 message.startsWith("FS_LIST_RESP|") -> {
                     val parts = message.split("|", limit = 3)
@@ -423,7 +426,27 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
                     if (parts.size >= 3) {
                         val targetPath = parts[1]
                         val base64Data = parts[2]
-                        saveRemoteFile(targetPath, base64Data)
+                        val filename = targetPath.substringAfterLast("/").substringAfterLast("\\")
+                        val localFile = File(localCurrentPath, filename).absolutePath
+                        saveRemoteFile(localFile, base64Data)
+                    }
+                }
+                message.startsWith("FS_FILE_SEND_OK|") -> {
+                    val parts = message.split("|", limit = 3)
+                    if (parts.size >= 3) {
+                        val filename = parts[1]
+                        val path = parts[2]
+                        binding.txtStatus.text = "'$filename' 전송 완료 (저장 위치: $path)"
+                        binding.progressBar.visibility = View.GONE
+                    }
+                }
+                message.startsWith("FS_FILE_SEND_ERR|") -> {
+                    val parts = message.split("|", limit = 3)
+                    if (parts.size >= 3) {
+                        val filename = parts[1]
+                        val err = parts[2]
+                        binding.txtStatus.text = "'$filename' 전송 실패: $err"
+                        binding.progressBar.visibility = View.GONE
                     }
                 }
                 message == "FS_CLOSE_UI" -> {
@@ -525,6 +548,7 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
 
     private fun saveRemoteFile(targetPath: String, base64Data: String) {
         val file = File(targetPath)
+        val filename = file.name
         
         binding.txtStatus.text = "'${file.name}' 파일 저장 중..."
         binding.progressBar.visibility = View.VISIBLE
@@ -537,10 +561,13 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
                 file.writeBytes(bytes)
 
                 withContext(Dispatchers.Main) {
-                    binding.txtStatus.text = "'${file.name}' 다운로드 완료"
+                    binding.txtStatus.text = "'${file.name}' 저장 완료 (저장 위치: ${file.absolutePath})"
                     binding.progressBar.visibility = View.GONE
                     refreshLocalList()
+                    sendLocalFileList(localCurrentPath)
                 }
+                
+                FileTransferSession.sendCommand("FS_FILE_SEND_OK|$filename|${file.absolutePath}")
             } catch (e: Exception) {
                 Log.e("FileTransferActivity", "Failed to save remote file: ${e.message}")
                 withContext(Dispatchers.Main) {
@@ -548,6 +575,7 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
                     binding.txtStatus.text = "파일 저장 실패"
                     binding.progressBar.visibility = View.GONE
                 }
+                FileTransferSession.sendCommand("FS_FILE_SEND_ERR|$filename|${e.message}")
             }
         }
     }

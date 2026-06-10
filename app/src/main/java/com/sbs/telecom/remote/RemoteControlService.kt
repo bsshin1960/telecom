@@ -128,9 +128,12 @@ class RemoteControlService : Service() {
     private var displayListener: DisplayManager.DisplayListener? = null
     private var lastRotation = -1
 
+    private var localCurrentPath = ""
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "onCreate: Service starting")
+        localCurrentPath = android.os.Environment.getExternalStorageDirectory().absolutePath
         isRunning = true
         startForegroundServiceWithNotification()
     }
@@ -176,21 +179,42 @@ class RemoteControlService : Service() {
             .setOngoing(true)
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        // In onCreate(), start as generic foreground service to prevent SecurityException on Android 14+
+        startForeground(NOTIFICATION_ID, notification)
 
         Log.d(TAG, "startForegroundServiceWithNotification: Notification started")
     }
 
+    private fun promoteToMediaProjectionForeground() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val pendingIntent = PendingIntent.getActivity(
+                this, 0, Intent(this, HostActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("TeleControl — 서비스 실행 중")
+                .setContentText("원격 도움 서비스가 실행 중입니다.")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentIntent(pendingIntent)
+                .setOngoing(true)
+                .build()
+
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                }
+            }
+
+            startForeground(NOTIFICATION_ID, notification, type)
+            Log.d(TAG, "promoteToMediaProjectionForeground: service promoted with types: $type")
+        }
+    }
+
     private fun startScreenCapture(resultCode: Int, resultData: Intent) {
         Log.d(TAG, "startScreenCapture: initializing MediaProjection")
+        promoteToMediaProjectionForeground()
         val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjection = mpManager.getMediaProjection(resultCode, resultData)
 
@@ -601,26 +625,130 @@ class RemoteControlService : Service() {
     }
 
     private fun handleFileCommand(command: String) {
-        if (command.startsWith("FS_OPEN_UI")) {
-            val initialPath = command.substringAfter("FS_OPEN_UI|", "")
-            serviceScope.launch(Dispatchers.Main) {
-                val context = RemoteAccessibilityService.instance ?: this@RemoteControlService
-                val intent = Intent(context, FileTransferActivity::class.java).apply {
-                    putExtra("is_client", false) // Host mode
-                    if (initialPath.isNotEmpty()) {
-                        putExtra("initial_remote_path", initialPath)
-                    }
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        Log.d(TAG, "handleFileCommand (silent background): $command")
+        try {
+            when {
+                command.startsWith("FS_OPEN_UI") -> {
+                    // Send initial folder file list back to the client immediately
+                    sendLocalFileList(localCurrentPath)
                 }
-                try {
-                    context.startActivity(intent)
-                    Log.d(TAG, "Successfully started FileTransferActivity from context: ${context.javaClass.simpleName}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to start FileTransferActivity: ${e.message}")
+                command.startsWith("FS_LIST_REQ") -> {
+                    val requestedPath = command.substringAfter("FS_LIST_REQ|", "")
+                    val targetPath = if (requestedPath.isNotEmpty()) requestedPath else localCurrentPath
+                    localCurrentPath = targetPath
+                    sendLocalFileList(targetPath)
+                }
+                command.startsWith("FS_FILE_REQ|") -> {
+                    val requestedPath = command.substringAfter("FS_FILE_REQ|")
+                    sendLocalFile(requestedPath)
+                }
+                command.startsWith("FS_FILE_SEND|") -> {
+                    val parts = command.split("|")
+                    if (parts.size >= 3) {
+                        val targetPath = parts[1]
+                        val base64Data = parts[2]
+                        val filename = targetPath.substringAfterLast("/").substringAfterLast("\\")
+                        val localFile = java.io.File(localCurrentPath, filename).absolutePath
+                        saveRemoteFile(localFile, base64Data)
+                    }
                 }
             }
-        } else {
-            FileTransferSession.activeListener?.onMessageReceived(command)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in silent background handleFileCommand: ${e.message}")
+        }
+    }
+
+    private fun sendLocalFileList(requestedPath: String) {
+        val currentDir = java.io.File(requestedPath)
+        val jsonArray = org.json.JSONArray()
+        try {
+            val list = currentDir.listFiles()
+            if (list != null) {
+                val dirs = mutableListOf<java.io.File>()
+                val files = mutableListOf<java.io.File>()
+                
+                for (file in list) {
+                    try {
+                        if (file.isDirectory) {
+                            dirs.add(file)
+                        } else if (file.isFile) {
+                            files.add(file)
+                        }
+                    } catch (e: Exception) {}
+                }
+                dirs.sortBy { it.name }
+                files.sortBy { it.name }
+
+                for (d in dirs) {
+                    val jsonObject = org.json.JSONObject().apply {
+                        put("name", d.name)
+                        put("is_dir", true)
+                        put("size", 0)
+                    }
+                    jsonArray.put(jsonObject)
+                }
+                for (f in files) {
+                    val jsonObject = org.json.JSONObject().apply {
+                        put("name", f.name)
+                        put("is_dir", false)
+                        put("size", f.length())
+                    }
+                    jsonArray.put(jsonObject)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to compile file list silently: ${e.message}")
+        }
+        sendTextCommand("FS_LIST_RESP|$requestedPath|$jsonArray")
+    }
+
+    private fun sendLocalFile(requestedPath: String) {
+        val file = java.io.File(requestedPath)
+        if (!file.exists()) return
+
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val bytes = file.readBytes()
+                val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                sendTextCommand("FS_FILE_SEND|$requestedPath|$base64Data")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to read requested file silently: ${e.message}")
+            }
+        }
+    }
+
+    private fun saveRemoteFile(targetPath: String, base64Data: String) {
+        val file = java.io.File(targetPath)
+        val filename = file.name
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                file.parentFile?.mkdirs()
+                val bytes = android.util.Base64.decode(base64Data, android.util.Base64.NO_WRAP)
+                file.writeBytes(bytes)
+                Log.d(TAG, "Silently saved remote file to: ${file.absolutePath}")
+                
+                // Send success message to PC client
+                sendTextCommand("FS_FILE_SEND_OK|$filename|${file.absolutePath}")
+                
+                // Immediately send the updated file list to PC so the PC UI refreshes!
+                sendLocalFileList(localCurrentPath)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save remote file silently: ${e.message}")
+                sendTextCommand("FS_FILE_SEND_ERR|$filename|${e.message}")
+            }
+        }
+    }
+
+    private fun sendTextCommand(cmd: String) {
+        val session = webSocketSession
+        if (session != null && session.isActive) {
+            serviceScope.launch {
+                try {
+                    session.send(Frame.Text(cmd))
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to send text command silently: ${e.message}")
+                }
+            }
         }
     }
 
