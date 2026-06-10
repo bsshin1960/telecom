@@ -119,8 +119,27 @@ class HostActivity : AppCompatActivity() {
             }
         }
 
-        // 릴레이 서버 IP 설정 버튼 추가 (리소스로 만듦 대신 코드로 동적 생성)
         val prefs = getSharedPreferences(RemoteControlService.PREF_NAME, Context.MODE_PRIVATE)
+
+        // 자동 도움 요청 체크박스 설정
+        val isAutoStart = prefs.getBoolean("auto_start", true)
+        binding.chkAutoStart.isChecked = isAutoStart
+        binding.chkAutoStart.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("auto_start", isChecked).apply()
+        }
+
+        // 자동 도움 요청 실행
+        if (isAutoStart && !isServiceRunning(RemoteControlService::class.java)) {
+            binding.root.postDelayed({
+                if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    startRemoteControlService()
+                } else {
+                    requestAudioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                }
+            }, 500)
+        }
+
+        // 릴레이 서버 IP 설정 버튼 추가 (리소스로 만듦 대신 코드로 동적 생성)
         val currentHost = prefs.getString(RemoteControlService.PREF_KEY_RELAY_HOST, RemoteControlService.DEFAULT_RELAY_HOST) ?: RemoteControlService.DEFAULT_RELAY_HOST
 
         // 서버 상태 카드 아래에 설정 버튼 추가
@@ -603,13 +622,13 @@ class HostActivity : AppCompatActivity() {
         if (running) {
             binding.txtServerStatus.text = "상태: 서비스 실행 중"
             binding.txtServerStatus.setTextColor(getColor(android.R.color.holo_green_light))
-            binding.btnToggleServer.text = "원격 도움 중단"
+            binding.btnToggleServer.text = "도움 중지"
             binding.btnToggleServer.backgroundTintList =
                 android.content.res.ColorStateList.valueOf(getColor(android.R.color.holo_red_dark))
         } else {
             binding.txtServerStatus.text = "상태: 서비스 정지됨"
             binding.txtServerStatus.setTextColor(getColor(android.R.color.holo_red_light))
-            binding.btnToggleServer.text = "원격 도움 요청"
+            binding.btnToggleServer.text = "도움 요청"
             binding.btnToggleServer.backgroundTintList =
                 android.content.res.ColorStateList.valueOf(0xFF6200EE.toInt())
             binding.txtIpAddress.text = "------"

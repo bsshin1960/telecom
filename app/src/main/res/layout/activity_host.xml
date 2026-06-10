@@ -114,11 +114,21 @@
                 android:layout_marginTop="4dp"
                 android:layout_marginBottom="12dp"/>
 
+            <CheckBox
+                android:id="@+id/chkAutoStart"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="자동 도움 요청"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:layout_marginBottom="12dp"
+                android:buttonTint="#03DAC6"/>
+
             <Button
                 android:id="@+id/btnToggleServer"
                 android:layout_width="match_parent"
                 android:layout_height="60dp"
-                android:text="원격 도움 요청"
+                android:text="도움 요청"
                 android:textSize="16sp"
                 android:textStyle="bold"
                 android:backgroundTint="#6200EE"
