@@ -53,7 +53,7 @@ class RemoteAccessibilityService : AccessibilityService() {
 
         // 자동 도움 요청 설정이 켜져 있는지 확인
         val prefs = getSharedPreferences("TeleControlPrefs", android.content.Context.MODE_PRIVATE)
-        val isAutoStart = prefs.getBoolean("auto_start", true)
+        val isAutoStart = prefs.getBoolean("auto_start", false)
         if (!isAutoStart) return
 
         val eventType = event.eventType
