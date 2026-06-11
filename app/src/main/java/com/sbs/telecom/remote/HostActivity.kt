@@ -397,8 +397,26 @@ class HostActivity : AppCompatActivity() {
         }
         layout.addView(section1Title)
 
+        val btnOpenStorageSetting = Button(this).apply {
+            text = "1단계: 파일 권한 설정 (모든 파일 접근)"
+            setBackgroundColor(0xFF018786.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(24), 0, dpToPx(16), 0)
+            setOnClickListener {
+                requestStoragePermission()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dpToPx(8)
+            }
+        }
+        layout.addView(btnOpenStorageSetting)
+
         val btnOpenAccessibility1 = Button(this).apply {
-            text = "1단계: 접근성 설정 열기 (차단 팝업 띄우기)"
+            text = "2단계: 접근성 설정 열기 (차단 팝업 띄우기)"
             setBackgroundColor(0xFF6200EE.toInt())
             setTextColor(0xFFFFFFFF.toInt())
             gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
@@ -416,7 +434,7 @@ class HostActivity : AppCompatActivity() {
         layout.addView(btnOpenAccessibility1)
 
         val btnOpenAppInfo = Button(this).apply {
-            text = "2단계: 애플리케이션 정보 열기 (제한 해제)"
+            text = "3단계: 애플리케이션 정보 열기 (제한 해제)"
             setBackgroundColor(0xFF018786.toInt())
             setTextColor(0xFFFFFFFF.toInt())
             gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
@@ -434,7 +452,7 @@ class HostActivity : AppCompatActivity() {
         layout.addView(btnOpenAppInfo)
 
         val btnOpenAccessibility2 = Button(this).apply {
-            text = "3단계: 접근성 설정 열기 (최종 활성화)"
+            text = "4단계: 접근성 설정 열기 (최종 활성화)"
             setBackgroundColor(0xFF6200EE.toInt())
             setTextColor(0xFFFFFFFF.toInt())
             gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
@@ -446,36 +464,18 @@ class HostActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dpToPx(8)
+                bottomMargin = dpToPx(16)
             }
         }
         layout.addView(btnOpenAccessibility2)
 
-        val btnOpenStorageSetting = Button(this).apply {
-            text = "4단계: 파일 권한 설정 (모든 파일 접근)"
-            setBackgroundColor(0xFF018786.toInt())
-            setTextColor(0xFFFFFFFF.toInt())
-            gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
-            setPadding(dpToPx(24), 0, dpToPx(16), 0)
-            setOnClickListener {
-                requestStoragePermission()
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dpToPx(16)
-            }
-        }
-        layout.addView(btnOpenStorageSetting)
-
         val section1Desc = TextView(this).apply {
             text = "PC가 없거나 ADB 사용이 어려운 경우 아래 순서대로 제한을 풀어보세요:\n\n" +
-                    "1. **[1단계]** 위의 `[1단계: 접근성 설정 열기]`를 누르고 '설치된 앱 > TeleControl'으로 들어간 뒤 제한 경고 팝업이 뜨면 [확인]을 누르고 뒤로 가기로 돌아옵니다.\n\n" +
-                    "2. **[2단계]** 위의 `[2단계: 애플리케이션 정보 열기]`를 눌러 이동한 후, 우측 상단의 [점 3개 메뉴] -> [제한된 설정 허용]을 선택합니다. (생체 인식/패턴 인증 필요)\n\n" +
-                    "3. **[3단계]** 위의 `[3단계: 접근성 설정 열기 (최종 활성화)]`를 눌러 다시 '설치된 앱 > TeleControl'으로 이동하여 접근성 스위치를 활성화합니다.\n\n" +
-                    "4. **[4단계]** 위의 `[4단계: 파일 권한 설정 (모든 파일 접근)]`을 눌러 저장소(모든 파일 관리) 권한 허용 화면으로 이동하여 '모든 파일 접근 허용'을 활성화합니다.\n\n" +
-                    "※ 반드시 1단계를 거쳐 차단 경고창을 먼저 띄우셔야만 2단계의 점 3개 메뉴가 나타납니다!"
+                    "1. **[1단계]** 위의 `[1단계: 파일 권한 설정 (모든 파일 접근)]`을 눌러 저장소(모든 파일 관리) 권한 허용 화면으로 이동하여 '모든 파일 접근 허용'을 활성화합니다.\n\n" +
+                    "2. **[2단계]** 위의 `[2단계: 접근성 설정 열기]`를 누르고 '설치된 앱 > TeleControl'으로 들어간 뒤 제한 경고 팝업이 뜨면 [확인]을 누르고 뒤로 가기로 돌아옵니다.\n\n" +
+                    "3. **[3단계]** 위의 `[3단계: 애플리케이션 정보 열기]`를 눌러 이동한 후, 우측 상단의 [점 3개 메뉴] -> [제한된 설정 허용]을 선택합니다. (생체 인식/패턴 인증 필요)\n\n" +
+                    "4. **[4단계]** 위의 `[4단계: 접근성 설정 열기 (최종 활성화)]`를 눌러 다시 '설치된 앱 > TeleControl'으로 이동하여 접근성 스위치를 활성화합니다.\n\n" +
+                    "※ 반드시 2단계를 거쳐 차단 경고창을 먼저 띄우셔야만 3단계의 점 3개 메뉴가 나타납니다!"
             setTextColor(0xFFBBBBBB.toInt())
             textSize = 13f
             layoutParams = LinearLayout.LayoutParams(

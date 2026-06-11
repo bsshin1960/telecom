@@ -92,6 +92,13 @@ class RemoteControlService : Service() {
         install(WebSockets) {
             pingInterval = 15_000
         }
+        engine {
+            config {
+                connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                readTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
+                writeTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
+            }
+        }
     }
     private var clientJob: Job? = null
     private var webSocketSession: WebSocketSession? = null
@@ -625,12 +632,26 @@ class RemoteControlService : Service() {
     }
 
     private fun handleFileCommand(command: String) {
-        Log.d(TAG, "handleFileCommand (silent background): $command")
+        Log.d(TAG, "handleFileCommand: $command")
+        
+        val activeListener = FileTransferSession.activeListener
+        if (activeListener != null) {
+            activeListener.onMessageReceived(command)
+            return
+        }
+
         try {
             when {
                 command.startsWith("FS_OPEN_UI") -> {
                     // Send initial folder file list back to the client immediately
                     sendLocalFileList(localCurrentPath)
+                    
+                    // Start FileTransferActivity on Host side automatically
+                    val intent = Intent(this, FileTransferActivity::class.java).apply {
+                        putExtra("is_client", false)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(intent)
                 }
                 command.startsWith("FS_LIST_REQ") -> {
                     val requestedPath = command.substringAfter("FS_LIST_REQ|", "")
@@ -720,6 +741,11 @@ class RemoteControlService : Service() {
     private fun saveRemoteFile(targetPath: String, base64Data: String) {
         val file = java.io.File(targetPath)
         val filename = file.name
+        if (file.exists()) {
+            Log.w(TAG, "File already exists: ${file.absolutePath}")
+            sendTextCommand("FS_FILE_EXISTS|$filename")
+            return
+        }
         serviceScope.launch(Dispatchers.IO) {
             try {
                 file.parentFile?.mkdirs()

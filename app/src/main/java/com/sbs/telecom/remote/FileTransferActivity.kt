@@ -26,6 +26,13 @@ import kotlinx.coroutines.withContext
 class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageListener {
 
     private lateinit var binding: ActivityFileTransferBinding
+    private var isCancelled = false
+    private class ActiveReceiver(
+        val targetPath: String,
+        val totalChunks: Int,
+        val tmpFile: File
+    )
+    private val activeReceivers = mutableMapOf<String, ActiveReceiver>()
     private var isClient = false // True = Phone이 '도움 주기' (Client), False = Phone이 '도움 받기' (Host)
     
     private val localFiles = mutableListOf<String>()
@@ -201,6 +208,29 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
                 transferRemoteToLocal(binding.listHelpGive, remoteFiles)
             }
         }
+
+        binding.btnCancelTransfer.setOnClickListener {
+            cancelTransfer()
+        }
+    }
+
+    private fun cancelTransfer() {
+        isCancelled = true
+        for ((filename, receiver) in activeReceivers) {
+            FileTransferSession.sendCommand("FS_FILE_CANCEL|$filename")
+            try {
+                if (receiver.tmpFile.exists()) {
+                    receiver.tmpFile.delete()
+                }
+            } catch (e: Exception) {
+                Log.e("FileTransferActivity", "Failed to delete tmp file: ${e.message}")
+            }
+        }
+        activeReceivers.clear()
+        
+        binding.txtStatus.text = "전송 취소됨"
+        binding.progressBar.visibility = View.GONE
+        binding.btnCancelTransfer.visibility = View.GONE
     }
 
     private fun updatePathLabels() {
@@ -340,32 +370,90 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
             return
         }
 
-        if (file.length() > 10 * 1024 * 1024) {
-            Toast.makeText(this, "10MB 이상의 파일은 전송할 수 없습니다.", Toast.LENGTH_SHORT).show()
+        if (file.length() > 50 * 1024 * 1024) {
+            Toast.makeText(this, "50MB 이상의 파일은 전송할 수 없습니다.", Toast.LENGTH_SHORT).show()
             return
         }
 
+        if (file.length() >= 10 * 1024 * 1024) {
+            Toast.makeText(this, "비용 발생 주의!", Toast.LENGTH_LONG).show()
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                Toast.makeText(this, "비용 발생 주의!", Toast.LENGTH_SHORT).show()
+            }, 2500)
+        }
+
+        isCancelled = false
         binding.txtStatus.text = "'$filename' 파일 전송 중..."
         binding.progressBar.visibility = View.VISIBLE
+        binding.progressBar.isIndeterminate = false
+        binding.btnCancelTransfer.visibility = View.VISIBLE
 
+        val fileSize = file.length()
+        val chunkSize = 512 * 1024 // 512KB
+        val totalChunks = ((fileSize + chunkSize - 1) / chunkSize).toInt()
+        
+        binding.progressBar.max = totalChunks
+        binding.progressBar.progress = 0
+
+        var success = false
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val bytes = file.readBytes()
-                val base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP)
-                
                 val targetPath = fslashJoin(remoteCurrentPath, filename)
-                FileTransferSession.sendCommand("FS_FILE_SEND|$targetPath|$base64Data")
+                FileTransferSession.sendCommand("FS_FILE_START|$targetPath|$totalChunks")
                 
-                withContext(Dispatchers.Main) {
-                    binding.txtStatus.text = "'$filename' 전송 완료 (저장 위치: $targetPath)"
-                    binding.progressBar.visibility = View.GONE
+                file.inputStream().use { input ->
+                    val buffer = ByteArray(chunkSize)
+                    var chunkIdx = 0
+                    var bytesRead = input.read(buffer)
+                    
+                    while (bytesRead != -1) {
+                        if (isCancelled) {
+                            FileTransferSession.sendCommand("FS_FILE_CANCEL|$filename")
+                            withContext(Dispatchers.Main) {
+                                binding.txtStatus.text = "전송 취소됨"
+                                binding.progressBar.visibility = View.GONE
+                                binding.btnCancelTransfer.visibility = View.GONE
+                            }
+                            return@launch
+                        }
+                        
+                        val chunkData = if (bytesRead < chunkSize) {
+                            buffer.copyOf(bytesRead)
+                        } else {
+                            buffer
+                        }
+                        
+                        val base64Chunk = Base64.encodeToString(chunkData, Base64.NO_WRAP)
+                        FileTransferSession.sendCommand("FS_FILE_CHUNK|$filename|$chunkIdx|$base64Chunk")
+                        
+                        chunkIdx++
+                        withContext(Dispatchers.Main) {
+                            binding.txtStatus.text = "'$filename' 파일 전송 중..."
+                        }
+                        
+                        bytesRead = input.read(buffer)
+                        kotlinx.coroutines.delay(10)
+                    }
                 }
+                
+                FileTransferSession.sendCommand("FS_FILE_END|$filename")
+                withContext(Dispatchers.Main) {
+                    binding.txtStatus.text = "'$filename' 전송 완료 대기 중..."
+                }
+                success = true
             } catch (e: Exception) {
                 Log.e("FileTransferActivity", "Send file failed: ${e.message}")
+                FileTransferSession.sendCommand("FS_FILE_SEND_ERR|$filename|${e.message}")
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@FileTransferActivity, "파일 전송 실패: ${e.message}", Toast.LENGTH_SHORT).show()
                     binding.txtStatus.text = "파일 전송 실패"
-                    binding.progressBar.visibility = View.GONE
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    if (!success) {
+                        binding.progressBar.visibility = View.GONE
+                        binding.btnCancelTransfer.visibility = View.GONE
+                    }
                 }
             }
         }
@@ -421,24 +509,47 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
                     val requestedPath = message.substringAfter("FS_FILE_REQ|")
                     sendLocalFile(requestedPath)
                 }
-                message.startsWith("FS_FILE_SEND|") -> {
+                message.startsWith("FS_FILE_START|") -> {
                     val parts = message.split("|")
                     if (parts.size >= 3) {
                         val targetPath = parts[1]
-                        val base64Data = parts[2]
-                        val filename = targetPath.substringAfterLast("/").substringAfterLast("\\")
-                        val localFile = File(localCurrentPath, filename).absolutePath
-                        saveRemoteFile(localFile, base64Data)
+                        val totalChunksStr = parts[2]
+                        handleFileStart(targetPath, totalChunksStr)
+                    }
+                }
+                message.startsWith("FS_FILE_CHUNK|") -> {
+                    val parts = message.split("|")
+                    if (parts.size >= 4) {
+                        val filename = parts[1]
+                        val chunkIdxStr = parts[2]
+                        val base64Chunk = parts[3]
+                        handleFileChunk(filename, chunkIdxStr, base64Chunk)
+                    }
+                }
+                message.startsWith("FS_FILE_END|") -> {
+                    val filename = message.substringAfter("FS_FILE_END|")
+                    handleFileEnd(filename)
+                }
+                message.startsWith("FS_FILE_CANCEL|") -> {
+                    val filename = message.substringAfter("FS_FILE_CANCEL|")
+                    handleFileCancel(filename)
+                }
+                message.startsWith("FS_FILE_PROGRESS|") -> {
+                    val parts = message.split("|")
+                    if (parts.size >= 3) {
+                        val filename = parts[1]
+                        val chunkIdxStr = parts[2]
+                        try {
+                            val chunkIdx = chunkIdxStr.toInt()
+                            binding.progressBar.progress = chunkIdx + 1
+                            binding.txtStatus.text = "'$filename' 파일 전송 중 (${chunkIdx + 1}/${binding.progressBar.max})..."
+                        } catch (e: Exception) {}
                     }
                 }
                 message.startsWith("FS_FILE_SEND_OK|") -> {
-                    val parts = message.split("|", limit = 3)
-                    if (parts.size >= 3) {
-                        val filename = parts[1]
-                        val path = parts[2]
-                        binding.txtStatus.text = "'$filename' 전송 완료 (저장 위치: $path)"
-                        binding.progressBar.visibility = View.GONE
-                    }
+                    binding.txtStatus.text = "파일 전송 완료"
+                    binding.progressBar.visibility = View.GONE
+                    binding.btnCancelTransfer.visibility = View.GONE
                 }
                 message.startsWith("FS_FILE_SEND_ERR|") -> {
                     val parts = message.split("|", limit = 3)
@@ -447,7 +558,13 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
                         val err = parts[2]
                         binding.txtStatus.text = "'$filename' 전송 실패: $err"
                         binding.progressBar.visibility = View.GONE
+                        binding.btnCancelTransfer.visibility = View.GONE
                     }
+                }
+                message.startsWith("FS_FILE_EXISTS|") -> {
+                    binding.txtStatus.text = "파일이 있습니다."
+                    binding.progressBar.visibility = View.GONE
+                    binding.btnCancelTransfer.visibility = View.GONE
                 }
                 message == "FS_CLOSE_UI" -> {
                     Toast.makeText(this, "상대방이 파일 전송을 종료했습니다.", Toast.LENGTH_SHORT).show()
@@ -477,7 +594,7 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
                 }
                 dirs.sortBy { it.name }
                 files.sortBy { it.name }
-
+ 
                 for (d in dirs) {
                     val jsonObject = JSONObject().apply {
                         put("name", d.name)
@@ -528,60 +645,193 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
         }
         remoteAdapter.notifyDataSetChanged()
         updatePathLabels()
-        binding.txtStatus.text = "원격 파일 목록 동기화 완료"
+        val currentStatus = binding.txtStatus.text.toString()
+        if (currentStatus != "파일 전송 완료" && currentStatus != "파일 수신 완료" && currentStatus != "파일이 있습니다.") {
+            binding.txtStatus.text = ""
+        }
     }
 
     private fun sendLocalFile(requestedPath: String) {
         val file = File(requestedPath)
         if (!file.exists()) return
+        val filename = file.name
 
+        isCancelled = false
+        binding.txtStatus.text = "'$filename' 파일 전송 중..."
+        binding.progressBar.visibility = View.VISIBLE
+        binding.progressBar.isIndeterminate = false
+        binding.btnCancelTransfer.visibility = View.VISIBLE
+
+        val fileSize = file.length()
+        val chunkSize = 512 * 1024 // 512KB
+        val totalChunks = ((fileSize + chunkSize - 1) / chunkSize).toInt()
+        
+        binding.progressBar.max = totalChunks
+        binding.progressBar.progress = 0
+
+        var success = false
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val bytes = file.readBytes()
-                val base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP)
-                FileTransferSession.sendCommand("FS_FILE_SEND|$requestedPath|$base64Data")
+                FileTransferSession.sendCommand("FS_FILE_START|$requestedPath|$totalChunks")
+                
+                file.inputStream().use { input ->
+                    val buffer = ByteArray(chunkSize)
+                    var chunkIdx = 0
+                    var bytesRead = input.read(buffer)
+                    
+                    while (bytesRead != -1) {
+                        if (isCancelled) {
+                            FileTransferSession.sendCommand("FS_FILE_CANCEL|$filename")
+                            withContext(Dispatchers.Main) {
+                                binding.txtStatus.text = "전송 취소됨"
+                                binding.progressBar.visibility = View.GONE
+                                binding.btnCancelTransfer.visibility = View.GONE
+                            }
+                            return@launch
+                        }
+                        
+                        val chunkData = if (bytesRead < chunkSize) {
+                            buffer.copyOf(bytesRead)
+                        } else {
+                            buffer
+                        }
+                        
+                        val base64Chunk = Base64.encodeToString(chunkData, Base64.NO_WRAP)
+                        FileTransferSession.sendCommand("FS_FILE_CHUNK|$filename|$chunkIdx|$base64Chunk")
+                        
+                        chunkIdx++
+                        withContext(Dispatchers.Main) {
+                            binding.txtStatus.text = "'$filename' 파일 전송 중..."
+                        }
+                        
+                        bytesRead = input.read(buffer)
+                        kotlinx.coroutines.delay(10)
+                    }
+                }
+                
+                FileTransferSession.sendCommand("FS_FILE_END|$filename")
+                withContext(Dispatchers.Main) {
+                    binding.txtStatus.text = "'$filename' 전송 완료 대기 중..."
+                }
+                success = true
             } catch (e: Exception) {
-                Log.e("FileTransferActivity", "Failed to read requested file: ${e.message}")
+                Log.e("FileTransferActivity", "Send requested file failed: ${e.message}")
+                FileTransferSession.sendCommand("FS_FILE_SEND_ERR|$filename|${e.message}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@FileTransferActivity, "파일 전송 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+                    binding.txtStatus.text = "파일 전송 실패"
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    if (!success) {
+                        binding.progressBar.visibility = View.GONE
+                        binding.btnCancelTransfer.visibility = View.GONE
+                    }
+                }
             }
         }
     }
 
-    private fun saveRemoteFile(targetPath: String, base64Data: String) {
-        val file = File(targetPath)
-        val filename = file.name
-        
-        binding.txtStatus.text = "'${file.name}' 파일 저장 중..."
-        binding.progressBar.visibility = View.VISIBLE
-
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                file.parentFile?.mkdirs()
-                
-                val bytes = Base64.decode(base64Data, Base64.NO_WRAP)
-                file.writeBytes(bytes)
-
-                withContext(Dispatchers.Main) {
-                    binding.txtStatus.text = "'${file.name}' 저장 완료 (저장 위치: ${file.absolutePath})"
-                    binding.progressBar.visibility = View.GONE
-                    refreshLocalList()
-                    sendLocalFileList(localCurrentPath)
-                }
-                
-                FileTransferSession.sendCommand("FS_FILE_SEND_OK|$filename|${file.absolutePath}")
-            } catch (e: Exception) {
-                Log.e("FileTransferActivity", "Failed to save remote file: ${e.message}")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@FileTransferActivity, "파일 저장 실패: ${e.message}", Toast.LENGTH_SHORT).show()
-                    binding.txtStatus.text = "파일 저장 실패"
-                    binding.progressBar.visibility = View.GONE
-                }
-                FileTransferSession.sendCommand("FS_FILE_SEND_ERR|$filename|${e.message}")
+    private fun handleFileStart(targetPath: String, totalChunksStr: String) {
+        try {
+            val totalChunks = totalChunksStr.toInt()
+            val filename = targetPath.substringAfterLast("/").substringAfterLast("\\")
+            val localFile = File(localCurrentPath, filename)
+            
+            if (localFile.exists()) {
+                binding.txtStatus.text = "파일이 있습니다."
+                binding.progressBar.visibility = View.GONE
+                binding.btnCancelTransfer.visibility = View.GONE
+                FileTransferSession.sendCommand("FS_FILE_EXISTS|$filename")
+                return
             }
+            
+            binding.txtStatus.text = "'$filename' 수신 중..."
+            binding.progressBar.visibility = View.VISIBLE
+            binding.progressBar.isIndeterminate = false
+            binding.progressBar.max = totalChunks
+            binding.progressBar.progress = 0
+            binding.btnCancelTransfer.visibility = View.VISIBLE
+            
+            val tmpFile = File(localCurrentPath, "$filename.tmp")
+            if (tmpFile.exists()) {
+                tmpFile.delete()
+            }
+            
+            val receiver = ActiveReceiver(
+                targetPath = localFile.absolutePath,
+                totalChunks = totalChunks,
+                tmpFile = tmpFile
+            )
+            activeReceivers[filename] = receiver
+        } catch (e: Exception) {
+            Log.e("FileTransferActivity", "Error handling file start: ${e.message}")
+        }
+    }
+
+    private fun handleFileChunk(filename: String, chunkIdxStr: String, base64Chunk: String) {
+        try {
+            val chunkIdx = chunkIdxStr.toInt()
+            val receiver = activeReceivers[filename] ?: return
+            
+            val bytes = Base64.decode(base64Chunk, Base64.NO_WRAP)
+            receiver.tmpFile.appendBytes(bytes)
+            
+            binding.progressBar.progress = chunkIdx + 1
+            binding.txtStatus.text = "'$filename' 파일 수신 중 (${chunkIdx + 1}/${receiver.totalChunks})..."
+            FileTransferSession.sendCommand("FS_FILE_PROGRESS|$filename|$chunkIdx")
+        } catch (e: Exception) {
+            Log.e("FileTransferActivity", "Error handling file chunk: ${e.message}")
+        }
+    }
+
+    private fun handleFileEnd(filename: String) {
+        try {
+            val receiver = activeReceivers.remove(filename) ?: return
+            val finalFile = File(receiver.targetPath)
+            
+            if (receiver.tmpFile.exists()) {
+                if (finalFile.exists()) {
+                    finalFile.delete()
+                }
+                receiver.tmpFile.renameTo(finalFile)
+            }
+            
+            binding.txtStatus.text = "파일 수신 완료"
+            binding.progressBar.visibility = View.GONE
+            binding.btnCancelTransfer.visibility = View.GONE
+            
+            refreshLocalList()
+            sendLocalFileList(localCurrentPath)
+            
+            FileTransferSession.sendCommand("FS_FILE_SEND_OK|$filename|${finalFile.absolutePath}")
+        } catch (e: Exception) {
+            Log.e("FileTransferActivity", "Error handling file end: ${e.message}")
+            binding.txtStatus.text = "파일 수신 완료 처리 실패"
+            binding.progressBar.visibility = View.GONE
+            binding.btnCancelTransfer.visibility = View.GONE
+        }
+    }
+
+    private fun handleFileCancel(filename: String) {
+        try {
+            val receiver = activeReceivers.remove(filename)
+            if (receiver != null) {
+                if (receiver.tmpFile.exists()) {
+                    receiver.tmpFile.delete()
+                }
+            }
+            binding.txtStatus.text = "전송 취소됨"
+            binding.progressBar.visibility = View.GONE
+            binding.btnCancelTransfer.visibility = View.GONE
+        } catch (e: Exception) {
+            Log.e("FileTransferActivity", "Error handling file cancel: ${e.message}")
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        cancelTransfer()
         FileTransferSession.activeListener = null
         FileTransferSession.sendCommand("FS_CLOSE_UI")
     }
