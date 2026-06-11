@@ -34,6 +34,8 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
     )
     private val activeReceivers = mutableMapOf<String, ActiveReceiver>()
     private var isClient = false // True = Phone이 '도움 주기' (Client), False = Phone이 '도움 받기' (Host)
+    private var isPeerAndroid = false
+    private var isUpperPaneLocal = false
     
     private val localFiles = mutableListOf<String>()
     private val remoteFiles = mutableListOf<String>()
@@ -52,6 +54,12 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
         setContentView(binding.root)
 
         isClient = intent.getBooleanExtra("is_client", false)
+        isPeerAndroid = FileTransferSession.isPeerAndroid
+        isUpperPaneLocal = if (isPeerAndroid) {
+            isClient
+        } else {
+            !isClient
+        }
         
         // 안드로이드 기본 스토리지 최상위 설정 (/storage/emulated/0)
         storageRoot = Environment.getExternalStorageDirectory().absolutePath
@@ -152,14 +160,32 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
     }
 
     private fun setupUI() {
-        if (isClient) {
-            // Local is 도움 주기 (아래), Remote is 도움 받기 (위)
-            binding.txtLeftTitle.text = "도움 받기 (원격 PC)"
-            binding.txtRightTitle.text = "도움 주기 (로컬 스마트폰)"
+        if (isPeerAndroid) {
+            // 휴대폰끼리 전송 시: 위=도움주기, 아래=도움받기
+            if (isClient) {
+                // 내가 도움주기(위 = 로컬 스마트폰, 아래 = 원격 스마트폰)
+                binding.txtLeftTitle.text = "도움 주기 (로컬 스마트폰)"
+                binding.txtRightTitle.text = "도움 받기 (원격 스마트폰)"
+            } else {
+                // 내가 도움받기(위 = 원격 스마트폰, 아래 = 로컬 스마트폰)
+                binding.txtLeftTitle.text = "도움 주기 (원격 스마트폰)"
+                binding.txtRightTitle.text = "도움 받기 (로컬 스마트폰)"
+            }
+            binding.btnSendToHelpGive.text = "아래로 전송 (도움 받기로) ⬇"
+            binding.btnSendToHelpReceive.text = "위로 전송 (도움 주기로) ⬆"
         } else {
-            // Local is 도움 받기 (위), Remote is 도움 주기 (아래)
-            binding.txtLeftTitle.text = "도움 받기 (로컬 스마트폰)"
-            binding.txtRightTitle.text = "도움 주기 (원격 PC)"
+            // PC와 전송 시: 위=도움받기, 아래=도움주기
+            if (isClient) {
+                // 내가 도움주기(위 = 원격 PC, 아래 = 로컬 스마트폰)
+                binding.txtLeftTitle.text = "도움 받기 (원격 PC)"
+                binding.txtRightTitle.text = "도움 주기 (로컬 스마트폰)"
+            } else {
+                // 내가 도움받기(위 = 로컬 스마트폰, 아래 = 원격 PC)
+                binding.txtLeftTitle.text = "도움 받기 (로컬 스마트폰)"
+                binding.txtRightTitle.text = "도움 주기 (원격 PC)"
+            }
+            binding.btnSendToHelpGive.text = "아래로 전송 (도움 주기로) ⬇"
+            binding.btnSendToHelpReceive.text = "위로 전송 (도움 받기로) ⬆"
         }
 
         updatePathLabels()
@@ -168,44 +194,44 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
         localAdapter = ArrayAdapter(this, R.layout.list_item_file, localFiles)
         remoteAdapter = ArrayAdapter(this, R.layout.list_item_file, remoteFiles)
 
-        if (isClient) {
-            binding.listHelpReceive.adapter = remoteAdapter
-            binding.listHelpGive.adapter = localAdapter
-        } else {
+        if (isUpperPaneLocal) {
             binding.listHelpReceive.adapter = localAdapter
             binding.listHelpGive.adapter = remoteAdapter
+        } else {
+            binding.listHelpReceive.adapter = remoteAdapter
+            binding.listHelpGive.adapter = localAdapter
         }
 
         // List item click listeners for directory navigation
         binding.listHelpReceive.setOnItemClickListener { _, _, position, _ ->
-            val isLocal = !isClient
+            val isLocal = isUpperPaneLocal
             val listView = binding.listHelpReceive
             handleItemClick(position, isLocal, listView)
         }
 
         binding.listHelpGive.setOnItemClickListener { _, _, position, _ ->
-            val isLocal = isClient
+            val isLocal = !isUpperPaneLocal
             val listView = binding.listHelpGive
             handleItemClick(position, isLocal, listView)
         }
 
         binding.btnSendToHelpGive.setOnClickListener {
-            if (isClient) {
-                // Remote (위) -> Local (아래) : 다운로드 요청 (Pull)
-                transferRemoteToLocal(binding.listHelpReceive, remoteFiles)
-            } else {
+            if (isUpperPaneLocal) {
                 // Local (위) -> Remote (아래) : 업로드 전송 (Push)
                 transferLocalToRemote(binding.listHelpReceive, localFiles)
+            } else {
+                // Remote (위) -> Local (아래) : 다운로드 요청 (Pull)
+                transferRemoteToLocal(binding.listHelpReceive, remoteFiles)
             }
         }
 
         binding.btnSendToHelpReceive.setOnClickListener {
-            if (isClient) {
-                // Local (아래) -> Remote (위) : 업로드 전송 (Push)
-                transferLocalToRemote(binding.listHelpGive, localFiles)
-            } else {
+            if (isUpperPaneLocal) {
                 // Remote (아래) -> Local (위) : 다운로드 요청 (Pull)
                 transferRemoteToLocal(binding.listHelpGive, remoteFiles)
+            } else {
+                // Local (아래) -> Remote (위) : 업로드 전송 (Push)
+                transferLocalToRemote(binding.listHelpGive, localFiles)
             }
         }
 
@@ -234,8 +260,8 @@ class FileTransferActivity : AppCompatActivity(), FileTransferSession.MessageLis
     }
 
     private fun updatePathLabels() {
-        val localLabel = if (isClient) binding.txtRightPath else binding.txtLeftPath
-        val remoteLabel = if (isClient) binding.txtLeftPath else binding.txtRightPath
+        val localLabel = if (isUpperPaneLocal) binding.txtLeftPath else binding.txtRightPath
+        val remoteLabel = if (isUpperPaneLocal) binding.txtRightPath else binding.txtLeftPath
         
         localLabel.text = "경로: $localCurrentPath"
         remoteLabel.text = "경로: $remoteCurrentPath"

@@ -131,6 +131,9 @@ class RemoteControlService : Service() {
 
     // 프레임 처리 중 동시 접근 방지
     private val isProcessingFrame = AtomicBoolean(false)
+    private val lastSentFrameTime = AtomicLong(0L)
+    private var reusableFullBitmap: Bitmap? = null
+    private var reusableCroppedBitmap: Bitmap? = null
 
     private var displayListener: DisplayManager.DisplayListener? = null
     private var lastRotation = -1
@@ -304,7 +307,16 @@ class RemoteControlService : Service() {
             return
         }
 
-        // 동시 처리 방지
+        // 1. 프레임 시간 간격 스로틀링 (최대 25 FPS 제한)
+        val now = System.currentTimeMillis()
+        if (now - lastSentFrameTime.get() < 40L) {
+            try {
+                reader.acquireLatestImage()?.close()
+            } catch (_: Exception) {}
+            return
+        }
+
+        // 2. 동시 처리 및 전송 방지 (Backpressure)
         if (!isProcessingFrame.compareAndSet(false, true)) {
             try {
                 reader.acquireLatestImage()?.close()
@@ -322,42 +334,47 @@ class RemoteControlService : Service() {
                 val rowStride = planes[0].rowStride
                 val rowPadding = rowStride - pixelStride * captureWidth
 
-                // rowPadding이 있으면 GPU 버퍼 정렬 때문에 실제 화면보다 넓은 비트맵이 생성됨
-                // 이 패딩 영역에는 쓰레기 값(노이즈 줄무늬)이 포함되므로 크롭 필요
                 val fullWidth = captureWidth + rowPadding / pixelStride
-                val fullBitmap = Bitmap.createBitmap(
-                    fullWidth,
-                    captureHeight,
-                    Bitmap.Config.ARGB_8888
-                )
-                fullBitmap.copyPixelsFromBuffer(buffer)
+                
+                // full 비트맵 생성 최소화 및 재활용
+                if (reusableFullBitmap == null || reusableFullBitmap!!.width != fullWidth || reusableFullBitmap!!.height != captureHeight) {
+                    reusableFullBitmap?.recycle()
+                    reusableFullBitmap = Bitmap.createBitmap(fullWidth, captureHeight, Bitmap.Config.ARGB_8888)
+                }
+                reusableFullBitmap!!.copyPixelsFromBuffer(buffer)
 
-                // 이미지를 즉시 close — 버퍼를 빨리 반환해야 다음 프레임을 받을 수 있음
+                // 이미지를 즉시 close하여 버퍼 반환
                 image.close()
                 image = null
 
-                // 패딩이 있는 경우 실제 화면 영역만 크롭, 없으면 그대로 사용
+                // cropped 비트맵 생성 최소화 및 재활용 (Canvas draw 적용)
                 val bitmap = if (rowPadding > 0) {
-                    val cropped = Bitmap.createBitmap(fullBitmap, 0, 0, captureWidth, captureHeight)
-                    fullBitmap.recycle()
-                    cropped
+                    if (reusableCroppedBitmap == null || reusableCroppedBitmap!!.width != captureWidth || reusableCroppedBitmap!!.height != captureHeight) {
+                        reusableCroppedBitmap?.recycle()
+                        reusableCroppedBitmap = Bitmap.createBitmap(captureWidth, captureHeight, Bitmap.Config.ARGB_8888)
+                    }
+                    val canvas = android.graphics.Canvas(reusableCroppedBitmap!!)
+                    val srcRect = android.graphics.Rect(0, 0, captureWidth, captureHeight)
+                    val dstRect = android.graphics.Rect(0, 0, captureWidth, captureHeight)
+                    canvas.drawBitmap(reusableFullBitmap!!, srcRect, dstRect, null)
+                    reusableCroppedBitmap!!
                 } else {
-                    fullBitmap
+                    reusableFullBitmap!!
                 }
 
                 val outStream = ByteArrayOutputStream(captureWidth * captureHeight / 4)
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 60, outStream)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 50, outStream) // 전송량 감축을 위해 퀄리티를 50으로 조절
                 val jpegBytes = outStream.toByteArray()
-                bitmap.recycle()
 
                 broadcastVideo(jpegBytes)
+            } else {
+                isProcessingFrame.set(false)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Image capture error: ${e.message}")
-        } finally {
-            // image가 아직 close되지 않은 경우 (에러 시)
-            try { image?.close() } catch (_: Exception) {}
             isProcessingFrame.set(false)
+        } finally {
+            try { image?.close() } catch (_: Exception) {}
         }
     }
 
@@ -368,7 +385,24 @@ class RemoteControlService : Service() {
 
         latestFrame = packet
         lastFrameTime.set(System.currentTimeMillis())
-        broadcastFrame(packet)
+
+        val session = webSocketSession
+        if (session != null) {
+            serviceScope.launch {
+                try {
+                    if (session.isActive && isClientConnected) {
+                        session.send(Frame.Binary(true, packet))
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Send video frame error: ${e.message}")
+                } finally {
+                    isProcessingFrame.set(false)
+                    lastSentFrameTime.set(System.currentTimeMillis())
+                }
+            }
+        } else {
+            isProcessingFrame.set(false)
+        }
     }
 
     private fun startAudioCapture() {
@@ -506,6 +540,9 @@ class RemoteControlService : Service() {
                                 } else if (text == "CLIENT_DISCONNECTED") {
                                     isClientConnected = false
                                     Log.d(TAG, "Client disconnected")
+                                } else if (text == "device=android") {
+                                    FileTransferSession.isPeerAndroid = true
+                                    Log.d(TAG, "Peer device is Android (Client)")
                                 } else {
                                     if (text == "CLIENT_READY") {
                                         // Client ready trigger
@@ -543,6 +580,7 @@ class RemoteControlService : Service() {
                 } finally {
                     webSocketSession = null
                     FileTransferSession.activeSession = null
+                    FileTransferSession.isPeerAndroid = false
                     isClientConnected = false
                 }
             }
@@ -910,6 +948,12 @@ class RemoteControlService : Service() {
         try { mediaProjection?.stop() } catch (e: Exception) {}
         try { imageReader?.close() } catch (e: Exception) {}
         try { backgroundThread?.quitSafely() } catch (e: Exception) {}
+        
+        reusableFullBitmap?.recycle()
+        reusableFullBitmap = null
+        reusableCroppedBitmap?.recycle()
+        reusableCroppedBitmap = null
+
         latestFrame = null
         serviceScope.cancel()
     }

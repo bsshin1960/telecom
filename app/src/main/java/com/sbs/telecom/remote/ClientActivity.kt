@@ -96,11 +96,17 @@ class ClientActivity : AppCompatActivity() {
             }
         }
 
+        var lastMoveSentTime = 0L
         binding.remoteDisplayView.touchEventListener = { action, xRatio, yRatio ->
             val session = webSocketSession
             if (session != null) {
-                // Channel에 넣으면 별도 코루틴이 순서대로 전송합니다.
-                touchChannel.trySend("action=$action,x=$xRatio,y=$yRatio")
+                val now = System.currentTimeMillis()
+                if (action != 2 || now - lastMoveSentTime >= 20L) {
+                    if (action == 2) {
+                        lastMoveSentTime = now
+                    }
+                    touchChannel.trySend("action=$action,x=$xRatio,y=$yRatio")
+                }
             }
         }
 
@@ -225,6 +231,7 @@ class ClientActivity : AppCompatActivity() {
 
                     // 서버에 클라이언트가 준비되었음을 알리고 최초 프레임 전송 요청
                     send(Frame.Text("CLIENT_READY"))
+                    send(Frame.Text("device=android"))
 
                     for (frame in incoming) {
                         if (!isActive) break
@@ -264,6 +271,8 @@ class ClientActivity : AppCompatActivity() {
                                 Log.d(TAG, "Received text frame: $text")
                                 if (text.startsWith("FS_")) {
                                     handleFileCommand(text)
+                                } else if (text == "device=android") {
+                                    FileTransferSession.isPeerAndroid = true
                                 } else if (text.startsWith("ERROR:")) {
                                     withContext(Dispatchers.Main) {
                                         val errMsg = when (text) {
@@ -298,6 +307,7 @@ class ClientActivity : AppCompatActivity() {
             } finally {
                                 webSocketSession = null
                                 FileTransferSession.activeSession = null
+                                FileTransferSession.isPeerAndroid = false
                                 touchSenderJob?.cancel()
                 touchSenderJob = null
                 releaseAudioTrack()

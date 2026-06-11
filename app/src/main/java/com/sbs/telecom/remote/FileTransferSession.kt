@@ -14,6 +14,7 @@ object FileTransferSession {
 
     var activeListener: MessageListener? = null
     var activeSession: WebSocketSession? = null
+    var isPeerAndroid: Boolean = false
 
     fun sendCommand(cmd: String) {
         val session = activeSession
