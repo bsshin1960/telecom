@@ -540,6 +540,7 @@ class RemoteControlService : Service() {
                                 } else if (text == "CLIENT_DISCONNECTED") {
                                     isClientConnected = false
                                     Log.d(TAG, "Client disconnected")
+                                    stopSelf()
                                 } else if (text == "device=android") {
                                     FileTransferSession.isPeerAndroid = true
                                     Log.d(TAG, "Peer device is Android (Client)")
