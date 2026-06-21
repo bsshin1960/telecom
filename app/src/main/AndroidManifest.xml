@@ -60,6 +60,7 @@
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
 
         <!-- Foreground Service for Remote Control (MediaProjection) -->
+        <!-- foregroundServiceType: API 29+에서 필요. Android 9(API 28)에서는 무시됨 -->
         <service
             android:name=".RemoteControlService"
             android:enabled="true"

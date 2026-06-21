@@ -52,7 +52,7 @@ class RemoteControlService : Service() {
     companion object {
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
-        const val RELAY_PORT = 8080
+        const val RELAY_PORT = 80
         // RELAY_HOST는 SharedPreferences에서 동적으로 읽습니다. getRelayHost()를 사용하세요.
         const val PREF_NAME = "TeleControlPrefs"
         const val PREF_KEY_RELAY_HOST = "relay_host"
@@ -76,6 +76,13 @@ class RemoteControlService : Service() {
         @Volatile
         var currentSessionId: String? = null
             internal set
+
+        /**
+         * 미래에 서 비스(Service)에서 직접 호출할 수 있도록 static 참조 보유
+         */
+        @Volatile
+        var instance: RemoteControlService? = null
+            private set
     }
 
     /**
@@ -90,11 +97,11 @@ class RemoteControlService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val client = HttpClient(OkHttp) {
         install(WebSockets) {
-            pingInterval = 15_000
+            pingInterval = 30_000 // 대역폭 불안정 시 끊김 방지를 위해 핑 주기 연장 (15초 -> 30초)
         }
         engine {
             config {
-                connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS) // 연결 제한 시간 연장 (15초 -> 30초)
                 readTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
                 writeTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
             }
@@ -145,27 +152,18 @@ class RemoteControlService : Service() {
         Log.d(TAG, "onCreate: Service starting")
         localCurrentPath = android.os.Environment.getExternalStorageDirectory().absolutePath
         isRunning = true
-        startForegroundServiceWithNotification()
+        instance = this
+        // Android 9+: startForegroundService() 후 5초 이내 startForeground() 필수 호출
+        // 이 호출이 없으면 OS가 강제로 앱을 종료함 (ForegroundServiceDidNotStartInTimeException)
+        startImmediateForeground()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
-        val resultData = intent?.let { IntentCompat.getParcelableExtra(it, EXTRA_RESULT_DATA, Intent::class.java) }
-
-        Log.d(TAG, "onStartCommand: resultCode=$resultCode, hasData=${resultData != null}")
-
-        if (resultCode != 0 && resultData != null) {
-            startScreenCapture(resultCode, resultData)
-            startWebSocketClient()
-        } else {
-            Log.e(TAG, "onStartCommand: Invalid parameters — resultCode=$resultCode, resultData=$resultData. Stopping.")
-            stopSelf()
-        }
-
-        return START_NOT_STICKY
-    }
-
-    private fun startForegroundServiceWithNotification() {
+    /**
+     * onCreate()에서 즉시 호출되는 기본 포그라운드 알림.
+     * Android 9의 FGS 5초 타임아웃 크래시를 방지하기 위해 반드시 존재해야 합니다.
+     * 이후 startScreenCapture()에서 MediaProjection 타입으로 업그레이드됩니다.
+     */
+    private fun startImmediateForeground() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
@@ -183,42 +181,75 @@ class RemoteControlService : Service() {
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("TeleControl — 서비스 실행 중")
+            .setContentText("원격 도움 서비스가 시작되는 중입니다...")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .build()
+
+        // Android 9(Pie, API 28) 이하는 타입 파라미터 없이 단순 호출
+        // Android 10(Q, API 29) 이상은 타입 지정 필요하나 여기서는 일단 기본 타입으로 시작
+        try {
+            startForeground(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "startImmediateForeground failed: ${e.message}")
+        }
+        Log.d(TAG, "startImmediateForeground: basic foreground notification set")
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
+        val resultData = intent?.let { IntentCompat.getParcelableExtra(it, EXTRA_RESULT_DATA, Intent::class.java) }
+
+        Log.d(TAG, "onStartCommand: resultCode=$resultCode, hasData=${resultData != null}")
+
+        if (resultCode != 0 && resultData != null) {
+            startScreenCapture(resultCode, resultData)
+            startWebSocketClient()
+        } else {
+            Log.e(TAG, "onStartCommand: Invalid parameters — resultCode=$resultCode, resultData=$resultData. Stopping.")
+            // startImmediateForeground()가 이미 onCreate()에서 호출되었으므로
+            // 추가 startForeground() 없이 그냥 stopSelf() 가능
+            stopSelf()
+        }
+
+        return START_NOT_STICKY
+    }
+
+
+
+    private fun promoteToMediaProjectionForeground() {
+        // Android 9(API 28) 이하는 타입 파라미터 자체가 존재하지 않으므로 업그레이드 불필요
+        // Android 10(Q, API 29) 이상만 MediaProjection 타입으로 업그레이드
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            Log.d(TAG, "promoteToMediaProjectionForeground: skipped for Android < Q (API 29)")
+            return
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, Intent(this, HostActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("TeleControl — 서비스 실행 중")
             .setContentText("원격 도움 서비스가 실행 중입니다.")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
 
-        // In onCreate(), start as generic foreground service to prevent SecurityException on Android 14+
-        startForeground(NOTIFICATION_ID, notification)
-
-        Log.d(TAG, "startForegroundServiceWithNotification: Notification started")
-    }
-
-    private fun promoteToMediaProjectionForeground() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val pendingIntent = PendingIntent.getActivity(
-                this, 0, Intent(this, HostActivity::class.java),
-                PendingIntent.FLAG_IMMUTABLE
-            )
-
-            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("TeleControl — 서비스 실행 중")
-                .setContentText("원격 도움 서비스가 실행 중입니다.")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentIntent(pendingIntent)
-                .setOngoing(true)
-                .build()
-
+        try {
             var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
             if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
                 }
             }
-
             startForeground(NOTIFICATION_ID, notification, type)
-            Log.d(TAG, "promoteToMediaProjectionForeground: service promoted with types: $type")
+            Log.d(TAG, "promoteToMediaProjectionForeground: promoted with types=$type")
+        } catch (e: Exception) {
+            Log.e(TAG, "promoteToMediaProjectionForeground failed: ${e.message}")
         }
     }
 
@@ -236,7 +267,7 @@ class RemoteControlService : Service() {
         }, null)
 
         val (realWidth, realHeight) = getRealScreenSize()
-        val scale = 0.5f
+        val scale = 0.3f // 대역폭 초과 방지를 위해 해상도 비율 축소 (0.5f -> 0.3f)
         captureWidth = (realWidth * scale).toInt()
         captureHeight = (realHeight * scale).toInt()
         val density = resources.displayMetrics.densityDpi
@@ -309,7 +340,7 @@ class RemoteControlService : Service() {
 
         // 1. 프레임 시간 간격 스로틀링 (최대 25 FPS 제한)
         val now = System.currentTimeMillis()
-        if (now - lastSentFrameTime.get() < 40L) {
+        if (now - lastSentFrameTime.get() < 250L) { // 대역폭 초과 방지를 위해 초당 프레임 수 제한 (40ms -> 250ms, 약 4 FPS)
             try {
                 reader.acquireLatestImage()?.close()
             } catch (_: Exception) {}
@@ -363,7 +394,7 @@ class RemoteControlService : Service() {
                 }
 
                 val outStream = ByteArrayOutputStream(captureWidth * captureHeight / 4)
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 50, outStream) // 전송량 감축을 위해 퀄리티를 50으로 조절
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 25, outStream) // 대역폭 초과 방지를 위해 화질을 25로 낮춤
                 val jpegBytes = outStream.toByteArray()
 
                 broadcastVideo(jpegBytes)
@@ -539,8 +570,9 @@ class RemoteControlService : Service() {
                                     triggerImmediateCapture()
                                 } else if (text == "CLIENT_DISCONNECTED") {
                                     isClientConnected = false
-                                    Log.d(TAG, "Client disconnected")
-                                    stopSelf()
+                                    Log.d(TAG, "Client disconnected from relay")
+                                    // 즉시 stopSelf() 하지 않고 재연결 대기
+                                    // PC가 다시 접속하면 CLIENT_CONNECTED 메시지 수신
                                 } else if (text == "device=android") {
                                     FileTransferSession.isPeerAndroid = true
                                     Log.d(TAG, "Peer device is Android (Client)")
@@ -583,6 +615,11 @@ class RemoteControlService : Service() {
                     FileTransferSession.activeSession = null
                     FileTransferSession.isPeerAndroid = false
                     isClientConnected = false
+                    currentSessionId = null
+                    val broadcastIntent = Intent("com.sbs.telecom.remote.SESSION_ID_RECEIVED").apply {
+                        putExtra("session_id", "DISCONNECTED")
+                    }
+                    sendBroadcast(broadcastIntent)
                 }
             }
         }
@@ -597,6 +634,25 @@ class RemoteControlService : Service() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Send frame error: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * PC(ViewerClient)에게 텍스트 상태 메시지를 전송합니다.
+     * 예) GOING_TO_SETTINGS, RETURNED_FROM_SETTINGS
+     */
+    fun sendStatusToPC(statusMessage: String) {
+        val session = webSocketSession ?: return
+        if (!isClientConnected) return
+        serviceScope.launch {
+            try {
+                if (session.isActive) {
+                    session.send(Frame.Text(statusMessage))
+                    Log.d(TAG, "sendStatusToPC: sent '$statusMessage'")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "sendStatusToPC error: ${e.message}")
             }
         }
     }
@@ -856,7 +912,7 @@ class RemoteControlService : Service() {
         
         try {
             val (realWidth, realHeight) = getRealScreenSize()
-            val scale = 0.5f
+            val scale = 0.3f // 대역폭 초과 방지를 위해 해상도 비율 축소 유지 (0.5f -> 0.3f)
             captureWidth = (realWidth * scale).toInt()
             captureHeight = (realHeight * scale).toInt()
             val density = resources.displayMetrics.densityDpi
@@ -919,6 +975,7 @@ class RemoteControlService : Service() {
         super.onDestroy()
         Log.d(TAG, "onDestroy: cleaning up resources")
         isRunning = false
+        instance = null
         currentSessionId = null
 
         // DisplayListener 해제

@@ -16,6 +16,7 @@ import com.sbs.telecom.remote.databinding.ActivityMainBinding
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private var autoClickRunnable: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -23,10 +24,12 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.btnHostMode.setOnClickListener {
+            cancelAutoClick()
             startActivity(Intent(this, HostActivity::class.java))
         }
 
         binding.btnClientMode.setOnClickListener {
+            cancelAutoClick()
             if (binding.layoutIpInput.visibility == View.VISIBLE) {
                 binding.layoutIpInput.visibility = View.GONE
             } else {
@@ -35,6 +38,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnFileTransfer.setOnClickListener {
+            cancelAutoClick()
             if (FileTransferSession.activeSession != null) {
                 val isHostMode = isServiceRunning(RemoteControlService::class.java)
                 val intent = Intent(this, FileTransferActivity::class.java).apply {
@@ -47,6 +51,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnConnect.setOnClickListener {
+            cancelAutoClick()
             val code = binding.edtIpAddress.text.toString().trim()
             if (code.length != 6 || !code.all { it.isDigit() }) {
                 Toast.makeText(this, "올바른 6자리 연결 ID를 입력해 주세요.", Toast.LENGTH_SHORT).show()
@@ -60,6 +65,27 @@ class MainActivity : AppCompatActivity() {
 
         // 릴레이 서버 설정 버튼 동적 추가
         setupSettingsButton()
+
+        // 3초 후 도움 받기(HostMode) 자동 클릭 예약
+        val runnable = Runnable {
+            if (!isFinishing && !isDestroyed) {
+                binding.btnHostMode.performClick()
+            }
+        }
+        autoClickRunnable = runnable
+        binding.btnHostMode.postDelayed(runnable, 3000)
+    }
+
+    private fun cancelAutoClick() {
+        autoClickRunnable?.let {
+            binding.btnHostMode.removeCallbacks(it)
+            autoClickRunnable = null
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        cancelAutoClick()
     }
 
     private fun isServiceRunning(serviceClass: Class<*>): Boolean {

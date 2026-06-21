@@ -65,12 +65,13 @@ class HostActivity : AppCompatActivity() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            startRemoteControlService()
+            launchScreenCapture()
         } else {
             Toast.makeText(this, "오디오 녹음 권한이 거부되었습니다. 화면만 공유됩니다.", Toast.LENGTH_SHORT).show()
-            startRemoteControlService()
+            launchScreenCapture()
         }
     }
+
 
     private val sessionIdReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -81,6 +82,9 @@ class HostActivity : AppCompatActivity() {
                 binding.txtIpAddress.setTextColor(0xFFFF5252.toInt())
                 Toast.makeText(context, "릴레이 서버에 연결할 수 없습니다.\n"
                     + "⚙ 서버 설정에서 IP를 확인하세요.", Toast.LENGTH_LONG).show()
+            } else if (sessionId == "DISCONNECTED") {
+                binding.txtIpAddress.text = "연결 끊김"
+                binding.txtIpAddress.setTextColor(0xFFFF5252.toInt())
             } else if (sessionId != null) {
                 binding.txtIpAddress.setTextColor(0xFF03DAC6.toInt())
                 updateSessionIdText(sessionId)
@@ -122,17 +126,18 @@ class HostActivity : AppCompatActivity() {
         val prefs = getSharedPreferences(RemoteControlService.PREF_NAME, Context.MODE_PRIVATE)
 
         // 자동 도움 요청 체크박스 설정
-        val isAutoStart = prefs.getBoolean("auto_start", false)
+        val isAutoStart = prefs.getBoolean("auto_start", true)
         binding.chkAutoStart.isChecked = isAutoStart
         binding.chkAutoStart.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean("auto_start", isChecked).apply()
         }
 
         // 자동 도움 요청 실행
+        // 자동 실행 시에는 접근성 확인 다이얼로그를 띄우지 않고 화면 공유 마서 시작
         if (isAutoStart && !isServiceRunning(RemoteControlService::class.java)) {
             binding.root.postDelayed({
                 if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                    startRemoteControlService()
+                    launchScreenCapture()  // 자동 실행: 접근성 다이얼로그 바이패스
                 } else {
                     requestAudioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
                 }
@@ -205,6 +210,8 @@ class HostActivity : AppCompatActivity() {
 
         if (isServiceRunning(RemoteControlService::class.java)) {
             updateSessionIdText(RemoteControlService.currentSessionId)
+            // 설정 화면에서 돌아온 경우 PC에 복굼 알림
+            RemoteControlService.instance?.sendStatusToPC("RETURNED_FROM_SETTINGS")
         } else {
             binding.txtIpAddress.text = "------"
         }
@@ -306,8 +313,18 @@ class HostActivity : AppCompatActivity() {
         return (dp * density).toInt()
     }
 
+    /**
+     * \uc124\uc815 \ud654\uba74\uc73c\ub85c \uc774\ub3d9\ud558\uae30 \uc9c1\uc804\uc5d0 PC(\uc6d0\uaca9 \uc81c\uc5b4\uc790)\uc5d0\uac8c \uc54c\ub9bc\uc744 \ubcf4\ub0c5\ub2c8\ub2e4.
+     * PC\ub294 \uc774 \uba54\uc2dc\uc9c0\ub97c \ubc1b\uc73c\uba74 "\uc5f0\uacb0 \ub04a\uae40"\uc774 \uc544\ub2cc "\uc124\uc815 \uc911(\uc7a0\uc2dc \ud6c4 \uc7ac\uc5f0\uacb0)"\uc73c\ub85c \ud45c\uc2dc\ud569\ub2c8\ub2e4.
+     */
+    private fun notifyGoingToSettings(settingName: String) {
+        RemoteControlService.instance?.sendStatusToPC("GOING_TO_SETTINGS|$settingName")
+        android.util.Log.d("HostActivity", "notifyGoingToSettings: $settingName")
+    }
+
     private fun isRestrictedSettingActive(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+
         return try {
             val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
             val mode = appOps.unsafeCheckOpNoThrow(
@@ -404,6 +421,7 @@ class HostActivity : AppCompatActivity() {
             gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
             setPadding(dpToPx(24), 0, dpToPx(16), 0)
             setOnClickListener {
+                notifyGoingToSettings("파일 권한 설정")
                 requestStoragePermission()
             }
             layoutParams = LinearLayout.LayoutParams(
@@ -422,6 +440,7 @@ class HostActivity : AppCompatActivity() {
             gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
             setPadding(dpToPx(24), 0, dpToPx(16), 0)
             setOnClickListener {
+                notifyGoingToSettings("접근성 설정")
                 showAccessibilityDisclosure()
             }
             layoutParams = LinearLayout.LayoutParams(
@@ -440,6 +459,7 @@ class HostActivity : AppCompatActivity() {
             gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
             setPadding(dpToPx(24), 0, dpToPx(16), 0)
             setOnClickListener {
+                notifyGoingToSettings("애플리케이션 정보")
                 openAppInfo()
             }
             layoutParams = LinearLayout.LayoutParams(
@@ -458,6 +478,7 @@ class HostActivity : AppCompatActivity() {
             gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
             setPadding(dpToPx(24), 0, dpToPx(16), 0)
             setOnClickListener {
+                notifyGoingToSettings("접근성 설정(최종)")
                 showAccessibilityDisclosure()
             }
             layoutParams = LinearLayout.LayoutParams(
@@ -661,28 +682,60 @@ class HostActivity : AppCompatActivity() {
     }
 
     private fun startRemoteControlService() {
+        // 접근성 서비스 확인 후 화면 공유 진행
         if (!isAccessibilityServiceEnabled(this, RemoteAccessibilityService::class.java)) {
-            // 권한 설정이 아예 안 되어 있다면 안내 창 띄우기
             if (!hasWriteSecureSettingsPermission()) {
-                showSetupGuideDialog()
+                // 접근성 권한 없으면 안내 다이얼로그만 표시하고 화면 공유는 계속
+                // (touch injection이 안 되는 종류라는 안내만)
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("⚠️ 접근성 권한 비활성화")
+                    .setMessage("화면 공유는 시작되지만, 접근성 권한이 없어 터치 제어는 동작하지 않습니다.\n"
+                        + "\n[한근 앉 설정하기] 버튼을 눌러 접근성 권한을 활성화하시면 구오/터치 제어도 동작합니다.")
+                    .setPositiveButton("화면 공유만 진행") { _, _ ->
+                        launchScreenCapture()
+                    }
+                    .setNegativeButton("접근성 도움말 보기") { _, _ ->
+                        showSetupGuideDialog()
+                    }
+                    .show()
+                return  // 다이얼로그 버튼 답변에서 launchScreenCapture() 호출
             } else {
                 Toast.makeText(
                     this,
                     "접근성 서비스가 비활성화 상태입니다.\n화면 공유만 진행됩니다.",
                     Toast.LENGTH_SHORT
                 ).show()
+                // 접근성은 없지만 화면 공유는 계속 진행
             }
         }
-        val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        // Android 14(API 34)부터 전체 화면 공유를 기본값으로 설정 가능
-        val captureIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            mediaProjectionManager.createScreenCaptureIntent(
-                android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()
-            )
-        } else {
-            mediaProjectionManager.createScreenCaptureIntent()
+        launchScreenCapture()
+    }
+
+    /**
+     * MediaProjection 화면 캡첬 권한 다이얼로그를 실행합니다.
+     * try-catch로 안드로이드 9 호환성 문제를 방지합니다.
+     */
+    private fun launchScreenCapture() {
+        try {
+            val mediaProjectionManager =
+                getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            // Android 14(API 34)부터 전체 화면 공유를 기본값으로 설정 가능
+            val captureIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                mediaProjectionManager.createScreenCaptureIntent(
+                    android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()
+                )
+            } else {
+                mediaProjectionManager.createScreenCaptureIntent()
+            }
+            screenCaptureLauncher.launch(captureIntent)
+        } catch (e: Exception) {
+            android.util.Log.e("HostActivity", "launchScreenCapture failed: ${e.message}", e)
+            Toast.makeText(
+                this,
+                "화면 캡첬를 시작할 수 없습니다: ${e.message}",
+                Toast.LENGTH_LONG
+            ).show()
         }
-        screenCaptureLauncher.launch(captureIntent)
     }
 
     private fun stopRemoteControlService() {
